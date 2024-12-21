@@ -1,6 +1,6 @@
 Le jeu s'appelle le GABO.
 
-C'est une jeu de carte avec 52 cartes, il y a l'as, 2, 3, 4, 5, 6, 7, 8, 9, 10, valet, reine et le roi avec les 4 versions cœur, carreau, pic & trèfle.
+C'est un jeu de carte avec 52 cartes, il y a l'as, 2, 3, 4, 5, 6, 7, 8, 9, 10, valet, reine et le roi avec les 4 versions cœur, carreau, pic & trèfle.
 Le jeu peut être joué entre 2 à 6 personnes. 
 
 
