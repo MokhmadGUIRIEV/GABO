@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GABO — Partie</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <div class="wrap">
+    <div class="top-bar">
+      <h1 class="brand" style="margin:0;">GABO</h1>
+      <div class="row">
+        <span class="hint">Salle</span>
+        <span class="room-code" id="room-code">------</span>
+        <a class="link hint" href="/lobby.html">&larr; Lobby</a>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="row" style="justify-content:space-between;">
+        <span id="phase-label" class="hint">Chargement...</span>
+        <span id="round-label" class="hint"></span>
+      </div>
+      <div class="scoreboard" id="scoreboard"></div>
+
+      <div class="table-area">
+        <div class="pile">
+          <div class="pile-label">Pioche</div>
+          <div class="card back" id="draw-pile-card"></div>
+          <div class="hint" id="draw-pile-count"></div>
+        </div>
+        <div class="pile">
+          <div class="pile-label">Défausse</div>
+          <div id="discard-pile-card"></div>
+        </div>
+      </div>
+
+      <div id="phase-panel"></div>
+
+      <div class="action-bar" id="global-actions"></div>
+    </div>
+
+    <div class="panel">
+      <h2 style="margin-top:0;">Joueurs</h2>
+      <div class="players-grid" id="players-grid"></div>
+    </div>
+
+    <div class="panel">
+      <h3 style="margin-top:0;">Journal</h3>
+      <div class="log-panel" id="log-panel"></div>
+    </div>
+  </div>
+
+  <div id="gate-container"></div>
+  <div id="modal-container"></div>
+
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/game.js"></script>
+</body>
+</html>
