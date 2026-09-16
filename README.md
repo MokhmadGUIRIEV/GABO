@@ -40,3 +40,73 @@ Ajouter à tout cela il y a des pouvoirs offerts avec certaines cartes piochés 
 
 Note importante par rapport à ces pouvoirs, le joueur qui a possibilité d'avoir acces à un pouvoir n'est pas dans l'obligation de l'utiliser si il souhaite piocher et jeter la carte dans la pile sans rien faire il en a le droit.
 
+---
+
+## Implémentation
+
+Ce dépôt contient une implémentation jouable du GABO.
+
+### Stack technique
+
+- **Backend** : Python (FastAPI + WebSockets), moteur de jeu pur (aucune dépendance web) testé unitairement avec pytest.
+- **Frontend** : HTML/CSS/JS vanilla, sans framework, responsive.
+- **Base de données** : SQLite (comptes joueurs, historique des parties et des scores).
+- **Authentification** : email + mot de passe (hash bcrypt), session par cookie signé.
+
+### Architecture
+
+```
+backend/
+  app/
+    game/
+      cards.py      -> cartes, valeurs, deck
+      engine.py      -> moteur de jeu pur (règles, tours, pouvoirs, scoring)
+    main.py           -> application FastAPI (routes + WebSocket + sert le frontend)
+    db.py, models.py   -> SQLite / SQLAlchemy (comptes, historique)
+    routes/            -> auth (inscription/connexion) et salles de jeu
+    ws.py              -> WebSocket temps réel reliant le moteur de jeu au client
+    rooms.py           -> gestion des salles en mémoire
+  tests/
+    test_engine.py     -> 20 tests unitaires du moteur de jeu
+frontend/
+  index.html, lobby.html, game.html
+  static/css, static/js
+```
+
+Le moteur de jeu (`engine.py`) ne connaît rien du transport (HTTP/WebSocket) : il expose une méthode `public_state(viewer_id)` qui ne révèle que ce que ce joueur a le droit de voir à cet instant. Cette séparation permet de réutiliser le moteur tel quel :
+- aujourd'hui en **mode local "pass & play"** : un seul navigateur pilote toute la table, et l'interface demande de faire circuler l'appareil entre les joueurs (avec des écrans de transition qui cachent les cartes tant que le bon joueur n'a pas confirmé être devant l'écran) ;
+- demain en **mode en ligne** : il suffira de connecter chaque joueur avec son propre WebSocket et son propre `viewer_id`, sans toucher au moteur de jeu.
+
+### Choix d'implémentation et hypothèses
+
+Le README des règles ne précise pas tout ; voici les choix faits pour lever les ambiguïtés :
+- **Snap** : la comparaison se fait sur la valeur/rang de la carte (un 8 quelle que soit sa couleur), pas sur la couleur exacte.
+- **Appel de GABO** : dès qu'il est annoncé, toutes les cartes sont immédiatement révélées et la manche se termine (les autres joueurs ne rejouent pas de dernier tour).
+- **Premier joueur de chaque nouvelle manche** : après un GABO, c'est le joueur suivant (sens horaire) après celui qui avait commencé la manche précédente qui commence, en sautant les joueurs éliminés.
+- **Observation initiale en mode local** : comme un seul écran est partagé, l'observation des 2 cartes de départ se fait joueur par joueur (chacun ayant ses 5 secondes), plutôt que simultanément comme ce serait le cas avec un appareil par joueur.
+
+### Installation
+
+Prérequis : Python 3.11+.
+
+```bash
+cd backend
+pip install -r requirements.txt
+```
+
+### Lancer le jeu en local
+
+```bash
+cd backend
+python -m uvicorn app.main:app --reload
+```
+
+Puis ouvrez `http://127.0.0.1:8000` dans votre navigateur : créez un compte, créez une partie en indiquant les noms des 2 à 6 joueurs qui vont se partager l'appareil, et jouez en suivant les instructions à l'écran (l'interface indique à qui de jouer et demande de faire circuler l'appareil au bon moment).
+
+### Lancer les tests
+
+```bash
+cd backend
+python -m pytest
+```
+

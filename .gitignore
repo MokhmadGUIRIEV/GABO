@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+backend/gabo.db
+backend/*.db
+.venv/
+venv/
+*.egg-info/
+.DS_Store
