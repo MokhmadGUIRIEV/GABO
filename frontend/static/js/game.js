@@ -19,6 +19,17 @@ let roomInfo = null; // {code, player_ids, player_names}
 let currentUser = null;
 const logEntries = [];
 
+// Initial-peek state lives entirely on the table (no popup): while a player
+// is choosing which 2 of their cards to look at, or while their chosen cards
+// are flipped face-up for the 5s memorization window, we render a special
+// scoped view instead of the normal all-hidden public one, and we stop
+// `refreshPublic` from clobbering it in the meantime.
+let awaitingPeekChoiceFor = null;
+let peekChosenIndices = [];
+let revealingPlayerId = null;
+let revealRemaining = 0;
+let peekOverrideActive = false;
+
 function log(message) {
   logEntries.unshift(`${new Date().toLocaleTimeString("fr-FR")} — ${message}`);
   const panel = document.getElementById("log-panel");
@@ -34,6 +45,7 @@ function call(action, payload = {}) {
 }
 
 async function refreshPublic() {
+  if (peekOverrideActive || awaitingPeekChoiceFor) return;
   const resp = await call("get_state", { viewer_id: "__public__" });
   publicState = resp.state;
   render();
@@ -151,20 +163,44 @@ function renderSeats(s) {
     .map((p, i) => {
       const seat = layout[i] || layout[layout.length - 1];
       const isTurn = p.id === s.current_player_id && ["turn", "awaiting_decision", "power_pending"].includes(s.phase);
+      const isSelecting = p.id === awaitingPeekChoiceFor;
+      const isRevealing = p.id === revealingPlayerId;
       const classes = ["seat"];
       if (seat.rotate === 180) classes.push("rotate-180");
       if (isTurn) classes.push("is-turn");
       if (p.eliminated) classes.push("eliminated");
-      const hand = p.hand
-        .map((slot) => (slot.hidden ? cardBack() : cardFace(slot.card)))
-        .join("");
+      if (isSelecting) classes.push("selecting");
+      if (isRevealing) classes.push("revealing");
+
+      let hand;
+      if (isSelecting) {
+        hand = p.hand
+          .map((slot, idx) => {
+            const chosen = peekChosenIndices.includes(idx);
+            return `<button class="card-btn seat-peek-slot ${chosen ? "chosen" : ""}" data-i="${idx}">${cardBack()}</button>`;
+          })
+          .join("");
+      } else {
+        hand = p.hand.map((slot) => (slot.hidden ? cardBack() : cardFace(slot.card))).join("");
+      }
+
+      const header = isRevealing
+        ? `${p.name} — regarde bien ! (${revealRemaining}s)`
+        : isSelecting
+        ? `${p.name} — choisis 2 cartes (${peekChosenIndices.length}/2)`
+        : `${p.name}${p.eliminated ? " ☠" : ""} — ${p.score} pts`;
+
       return `<div class="${classes.join(" ")}" style="top:${seat.top}%; left:${seat.left}%;">
-        <div class="seat-header">${p.name}${p.eliminated ? " ☠" : ""} — ${p.score} pts</div>
+        <div class="seat-header">${header}</div>
         <div class="hand-row">${hand || '<span class="hint">Pas de cartes</span>'}</div>
       </div>`;
     })
     .join("");
   document.getElementById("seats-container").innerHTML = html;
+
+  document.querySelectorAll(".seat-peek-slot").forEach((btn) => {
+    btn.onclick = () => handlePeekSlotClick(Number(btn.dataset.i));
+  });
 }
 
 function renderGlobalActions(s) {
@@ -206,10 +242,19 @@ function renderPhasePanel(s) {
       panel.innerHTML = `<p class="hint">Tout le monde a regardé ses cartes, la manche démarre...</p>`;
       return;
     }
+    if (awaitingPeekChoiceFor || revealingPlayerId) {
+      const name = playerName(awaitingPeekChoiceFor || revealingPlayerId);
+      panel.innerHTML = `<p class="hint">Assure-toi que les autres ne regardent pas l'écran de ${name}. Clique 2 de ses cartes sur la table ci-dessus.</p>`;
+      return;
+    }
     const next = remaining[0];
     const btn = document.createElement("button");
     btn.textContent = `Passe l'appareil à ${next.name} et clique ici`;
-    btn.onclick = () => openInitialPeekGate(next.id);
+    btn.onclick = () => {
+      awaitingPeekChoiceFor = next.id;
+      peekChosenIndices = [];
+      render();
+    };
     panel.innerHTML = `<p class="hint">${remaining.length} joueur(s) doivent encore regarder 2 de leurs cartes.</p>`;
     panel.appendChild(btn);
     return;
@@ -275,56 +320,50 @@ function closeModal() {
 }
 
 // ---------------------------------------------------------------------
-// Initial peek gate
+// Initial peek: happens directly on the table, in the player's own seat —
+// no popup. The player clicks 2 of their own (still hidden) cards to choose
+// which ones to look at; those 2 flip face-up in place for 5 seconds.
 // ---------------------------------------------------------------------
 
-const INITIAL_PEEK_INDICES = [0, 1];
-
-function openInitialPeekGate(playerId) {
-  showGate(`
-    <h2>${playerName(playerId)}</h2>
-    <p>Assure-toi que les autres joueurs ne regardent pas l'écran.</p>
-    <p class="hint">Tes 2 premières cartes vont se retourner pendant 5 secondes.</p>
-    <div class="row" style="justify-content:center;">${cardBack()}${cardBack()}</div>
-    <div class="row" style="justify-content:center; margin-top:16px;">
-      <button id="reveal-initial-btn">Je suis prêt, regarder mes cartes</button>
-    </div>
-    <div class="row" style="justify-content:center; margin-top:10px;">
-      <button class="secondary" onclick="closeGate()">Annuler / je ne suis pas ${playerName(playerId)}</button>
-    </div>
-  `);
-  document.getElementById("reveal-initial-btn").onclick = async () => {
-    try {
-      const resp = await call("peek_initial", { player_id: playerId, indices: INITIAL_PEEK_INDICES });
-      const player = resp.state.players.find((p) => p.id === playerId);
-      showInitialPeekReveal(playerId, player, INITIAL_PEEK_INDICES);
-    } catch (e) {
-      log("Erreur: " + e.message);
-      closeGate();
-    }
-  };
+function handlePeekSlotClick(index) {
+  if (!awaitingPeekChoiceFor) return;
+  if (peekChosenIndices.includes(index)) return;
+  peekChosenIndices.push(index);
+  if (peekChosenIndices.length < 2) {
+    render();
+    return;
+  }
+  startInitialPeekReveal(awaitingPeekChoiceFor, peekChosenIndices.slice());
 }
 
-function showInitialPeekReveal(playerId, player, indices) {
-  const cardsHtml = indices
-    .map((i) => cardFace(player.hand[i].card))
-    .join("");
-  showGate(`
-    <h2>${playerName(playerId)}, mémorise bien !</h2>
-    <div class="row" style="justify-content:center;">${cardsHtml}</div>
-    <div class="countdown" id="peek-countdown">5</div>
-    <p class="hint">Les cartes se recachent automatiquement.</p>
-  `);
-  let remaining = 5;
-  const interval = setInterval(() => {
-    remaining -= 1;
-    const el = document.getElementById("peek-countdown");
-    if (el) el.textContent = String(Math.max(remaining, 0));
-    if (remaining <= 0) {
-      clearInterval(interval);
-      closeGate();
-    }
-  }, 1000);
+async function startInitialPeekReveal(playerId, indices) {
+  peekOverrideActive = true;
+  awaitingPeekChoiceFor = null;
+  try {
+    const resp = await call("peek_initial", { player_id: playerId, indices });
+    publicState = resp.state;
+    revealingPlayerId = playerId;
+    revealRemaining = 5;
+    render();
+    await new Promise((resolve) => {
+      const interval = setInterval(() => {
+        revealRemaining -= 1;
+        if (revealRemaining <= 0) {
+          clearInterval(interval);
+          resolve();
+        } else {
+          render();
+        }
+      }, 1000);
+    });
+  } catch (e) {
+    log("Erreur: " + e.message);
+  } finally {
+    revealingPlayerId = null;
+    peekChosenIndices = [];
+    peekOverrideActive = false;
+    await refreshPublic();
+  }
 }
 
 // ---------------------------------------------------------------------

@@ -161,6 +161,17 @@ a.link { color: var(--accent); }
 .seat.is-turn .seat-header { border-color: var(--accent); box-shadow: 0 0 8px rgba(224,176,57,0.6); color: var(--accent); }
 .seat.eliminated .seat-header { opacity: 0.45; text-decoration: line-through; }
 
+.seat.selecting .seat-header { border-color: var(--accent); color: var(--accent); }
+.seat.revealing .seat-header {
+  border-color: var(--accent);
+  color: var(--accent);
+  animation: seat-pulse 1s ease-in-out infinite;
+}
+@keyframes seat-pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(224,176,57,0.6); }
+  50% { box-shadow: 0 0 18px rgba(224,176,57,1); }
+}
+
 .seat .hand-row {
   display: flex;
   gap: 6px;
@@ -169,6 +180,17 @@ a.link { color: var(--accent); }
 }
 .seat .card, .seat .card.back { width: 42px; height: 60px; font-size: 0.85rem; }
 .seat .hand-slot .slot-index { display: none; }
+
+.seat-peek-slot {
+  all: unset;
+  cursor: pointer;
+  display: block;
+}
+.seat-peek-slot.chosen .card.back {
+  border-color: var(--accent);
+  box-shadow: 0 0 10px rgba(224,176,57,0.8);
+  transform: translateY(-4px);
+}
 
 @media (max-width: 560px) {
   .table-surface { max-width: 100%; }
