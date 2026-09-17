@@ -430,10 +430,16 @@ class GameEngine:
     def public_state(self, viewer_id: str) -> dict:
         self._purge_expired_reveals()
         now = self._clock()
+        # Once a round ends (GABO called or the game is over), every hand is
+        # shown face up to everyone, exactly as it would be on a real table.
+        reveal_all = self.phase in (Phase.ROUND_OVER, Phase.GAME_OVER)
 
         def hand_view(owner: Player) -> list[dict]:
             slots = []
             for idx, card in enumerate(owner.hand):
+                if reveal_all:
+                    slots.append({"hidden": False, "card": card.to_dict()})
+                    continue
                 reveal = next(
                     (r for r in self._reveals
                      if r.viewer_id == viewer_id and r.target_player_id == owner.id and r.hand_index == idx),
