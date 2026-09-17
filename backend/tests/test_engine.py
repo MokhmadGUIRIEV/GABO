@@ -64,6 +64,32 @@ def test_start_round_deals_four_cards_each_and_enters_initial_peek():
     assert engine.round_number == 1
 
 
+def test_finish_initial_peek_flips_a_starting_discard_card():
+    engine = make_engine(3)
+    engine.start_round()
+    assert engine.deck.top_discard is None
+    draw_count_before = len(engine.deck.draw_pile)
+    engine.finish_initial_peek()
+    assert engine.deck.top_discard is not None
+    assert len(engine.deck.draw_pile) == draw_count_before - 1
+    # Snapping must already be possible before anyone has taken a turn.
+    snapper = engine.players[1]
+    snapper.hand[0] = engine.deck.top_discard
+    assert engine.snap_attempt(snapper.id, 0) is True
+
+
+def test_finish_initial_peek_does_not_flip_twice_across_calls():
+    engine = make_engine(2)
+    engine.start_round()
+    engine.finish_initial_peek()
+    top = engine.deck.top_discard
+    # A later call within the same round (e.g. a defensive re-invocation)
+    # must not burn another card once a discard top already exists.
+    engine.phase = Phase.INITIAL_PEEK
+    engine.finish_initial_peek()
+    assert engine.deck.top_discard == top
+
+
 def test_engine_rejects_invalid_player_counts():
     with pytest.raises(GameError):
         GameEngine(["a"], {"a": "A"})
@@ -297,6 +323,48 @@ def test_gabo_caller_strictly_lowest_wins_round():
     assert p2.score == 18
     summary = engine.last_round_summary
     assert summary["caller_won"] is True
+
+
+def test_round_over_reveals_every_hand_to_every_viewer():
+    engine = make_engine(3)
+    engine.start_round()
+    engine.finish_initial_peek()
+
+    caller, p1, p2 = engine.players
+    engine.current_index = engine.players.index(caller)
+    caller.hand = [Card(Rank.ACE, Suit.HEART), Card(Rank.TWO, Suit.CLUB)]
+    p1.hand = [Card(Rank.ACE, Suit.SPADE), Card(Rank.FOUR, Suit.CLUB)]
+    p2.hand = [Card(Rank.SEVEN, Suit.HEART), Card(Rank.JACK, Suit.CLUB)]
+
+    engine.call_gabo(caller.id)
+    assert engine.phase == Phase.ROUND_OVER
+
+    for viewer in ["__public__", caller.id, p1.id, p2.id]:
+        state = engine.public_state(viewer)
+        for player_view, player in zip(state["players"], engine.players):
+            for slot, card in zip(player_view["hand"], player.hand):
+                assert slot["hidden"] is False
+                assert slot["card"] == card.to_dict()
+
+
+def test_game_over_also_reveals_every_hand():
+    engine = make_engine(2)
+    engine.start_round()
+    engine.finish_initial_peek()
+
+    caller, opponent = engine.players
+    engine.current_index = engine.players.index(caller)
+    caller.score = 70
+    caller.hand = [Card(Rank.KING, Suit.HEART)]
+    opponent.hand = [Card(Rank.ACE, Suit.HEART)]
+
+    engine.call_gabo(caller.id)
+    assert engine.phase == Phase.GAME_OVER
+
+    state = engine.public_state("__public__")
+    caller_view = next(p for p in state["players"] if p["id"] == caller.id)
+    assert caller_view["hand"][0]["hidden"] is False
+    assert caller_view["hand"][0]["card"] == caller.hand[0].to_dict()
 
 
 def test_gabo_caller_tied_or_beaten_gets_penalty_only():
