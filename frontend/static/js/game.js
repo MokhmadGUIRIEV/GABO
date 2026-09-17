@@ -182,6 +182,10 @@ const SEAT_LAYOUTS = {
 // What clicking a given seat's cards currently does, if anything. Returns a
 // mode string or null. See `dispatchSeatAction` for what each mode triggers.
 function computeSeatMode(s, playerId) {
+  // While a timed reveal is animating (initial peek or a power), nothing
+  // else is clickable — this avoids racing the reveal's own async flow with
+  // a new action started underneath it before it has released its context.
+  if (revealingPlayerId) return null;
   if (playerId === awaitingPeekChoiceFor) return "peek";
   if (s.phase === "awaiting_decision" && playerId === s.current_player_id) return "swap-drawn";
   if (s.phase === "power_pending") {
@@ -275,7 +279,7 @@ function dispatchSeatAction(mode, playerId, idx) {
 function renderGlobalActions(s) {
   const el = document.getElementById("global-actions");
   el.innerHTML = "";
-  if (s.phase !== "turn" || !s.top_discard) {
+  if (revealingPlayerId || s.phase !== "turn" || !s.top_discard) {
     snapArmed = false;
     return;
   }
@@ -292,6 +296,11 @@ function renderGlobalActions(s) {
 function renderPhasePanel(s) {
   const panel = document.getElementById("phase-panel");
   panel.innerHTML = "";
+
+  if (revealingPlayerId) {
+    panel.innerHTML = `<p class="hint">${playerName(revealingPlayerId)} mémorise sa carte... (${revealRemaining}s)</p>`;
+    return;
+  }
 
   if (s.phase === "lobby") {
     const btn = document.createElement("button");
@@ -454,8 +463,13 @@ async function startInitialPeekReveal(playerId, indices) {
     log("Erreur: " + e.message);
   } finally {
     peekChosenIndices = [];
-    pendingPrivateContext = null;
-    await refreshPublic();
+    // Only release the context if nothing else has taken it over in the
+    // meantime (defensive: this coroutine's own render-gating should
+    // already prevent that, but never clobber a newer flow's state).
+    if (pendingPrivateContext === playerId) {
+      pendingPrivateContext = null;
+      await refreshPublic();
+    }
   }
 }
 
@@ -491,7 +505,7 @@ async function handleDiscardDrawn(playerId) {
     publicState = resp.state;
     if (resp.state.phase === "power_pending" && resp.state.pending_power_owner === playerId) {
       render();
-    } else {
+    } else if (pendingPrivateContext === playerId) {
       pendingPrivateContext = null;
       await refreshPublic();
     }
@@ -508,8 +522,10 @@ async function handleSwapDrawn(playerId, idx) {
   } catch (e) {
     log("Erreur: " + e.message);
   } finally {
-    pendingPrivateContext = null;
-    await refreshPublic();
+    if (pendingPrivateContext === playerId) {
+      pendingPrivateContext = null;
+      await refreshPublic();
+    }
   }
 }
 
@@ -525,8 +541,10 @@ async function handlePowerPeekOwn(playerId, idx) {
   } catch (e) {
     log("Erreur: " + e.message);
   } finally {
-    pendingPrivateContext = null;
-    await refreshPublic();
+    if (pendingPrivateContext === playerId) {
+      pendingPrivateContext = null;
+      await refreshPublic();
+    }
   }
 }
 
@@ -542,8 +560,10 @@ async function handlePowerPeekOpponent(ownerId, targetId, idx) {
   } catch (e) {
     log("Erreur: " + e.message);
   } finally {
-    pendingPrivateContext = null;
-    await refreshPublic();
+    if (pendingPrivateContext === ownerId) {
+      pendingPrivateContext = null;
+      await refreshPublic();
+    }
   }
 }
 
@@ -561,8 +581,10 @@ async function handlePowerSwapTarget(ownerId, ownIndex, targetId, targetIndex) {
     log("Erreur: " + e.message);
   } finally {
     powerSwapOwnIndex = null;
-    pendingPrivateContext = null;
-    await refreshPublic();
+    if (pendingPrivateContext === ownerId) {
+      pendingPrivateContext = null;
+      await refreshPublic();
+    }
   }
 }
 
@@ -574,8 +596,10 @@ async function handleSkipPower(playerId) {
     log("Erreur: " + e.message);
   } finally {
     powerSwapOwnIndex = null;
-    pendingPrivateContext = null;
-    await refreshPublic();
+    if (pendingPrivateContext === playerId) {
+      pendingPrivateContext = null;
+      await refreshPublic();
+    }
   }
 }
 
