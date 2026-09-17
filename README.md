@@ -1,44 +1,76 @@
-Le jeu s'appelle le GABO.
+# GABO
 
-C'est un jeu de carte avec 52 cartes, il y a l'as, 2, 3, 4, 5, 6, 7, 8, 9, 10, valet, reine et le roi avec les 4 versions cœur, carreau, pic & trèfle.
-Le jeu peut être joué entre 2 à 6 personnes. 
+## Aperçu
 
+GABO est un jeu de cartes de mémoire et de bluff, pour **2 à 6 joueurs**, avec un jeu de 52 cartes classique (As à Roi, dans les 4 couleurs : cœur, carreau, pique, trèfle).
 
-Au lancement du jeu, chaque joueur reçoit aléatoirement 4 cartes qu'il ne connait et qu'il ne peut pas regarder. Une fois que chaque joueur reçoit ces 4 cartes retourné (le reste des cartes va former une pioche), ils ont tous en même temps 5 secondes pour prendre connaissance de 2 de leurs cartes, après avoir pris connaissance des 2 cartes et une fois les 5 secondes écoulés les 2 cartes se retournent et il y a donc un système de mémorisation qui entre en jeu. 
-Pour la premiere manche du jeu, le 1er joueur à commencer sera défini aléatoirement et ensuite l'ordre de jeu suit le sens horaire.
-Désormais tout est prêt pour pouvoir lancer le jeu, et donc le premier joueur va piocher une carte qu'il va pouvoir observer et lui seul ne peut la voir.
-Et maintenant viens à lui un choix qui est: Soit de déposer la carte piocher au milieu de la table Soit d'échanger cette carte, dont il a connaissance, avec l'une de ces 4 cartes qu'il a eu au début du jeu et donc poser la carte piocher dans son jeu et déposer la carte échanger au milieu.
-Chose importante à savoir: Lorsqu'une carte est déposé au milieu de la table si un joueur pense posséder/ se rapelle posséder la meme carte il peut jeter sa carte au milieu egalement et se retrouver avec une carte en moins (exemple: parmis les 2 cartes que j'ai observe au début je rapelle avoir un 6 et un 8, le joueur avant moi pioche et depose un 8 au milieu de la table dans ce cas la meme si ce n'est pas à mon tour tant que la carte en haut de la pile reste le 8 je pourrai déposer mon 8 par dessus) par contre si je me trompe dans le choix de carte a déposer, je prends une carte de pénalité c'est a dire que je dois piocher une carte sans l'observer et la déposer dans mon jeu.
-Ainsi de suite chaque joueur va piocher et avoir le meme choix à réaliser. 
-Je vais venir au but du jeu mais il faut savoir que chaque carte a une valeur qui sont:
-- As (Coeur, Carreau, Pic & Trèfle) = 1
-- 2 (Coeur, Carreau, Pic & Trèfle) = 2
-- 3 (Coeur, Carreau, Pic & Trèfle) = 3
-- 4 (Coeur, Carreau, Pic & Trèfle) = 4
-- 5 (Coeur, Carreau, Pic & Trèfle) = 5
-- 6 (Coeur, Carreau, Pic & Trèfle) = 6
-- 7 (Coeur, Carreau, Pic & Trèfle) = 7
-- 8 (Coeur, Carreau, Pic & Trèfle) = 8
-- 9 (Coeur, Carreau, Pic & Trèfle) = 9
-- 10 (Coeur, Carreau, Pic & Trèfle) = 10
-- Valet (Coeur, Carreau, Pic & Trèfle) = 11
-- Dame (Coeur, Carreau, Pic & Trèfle) = 12
-- Roi (Coeur & Carreau) = 35
-- Roi (Pic & Trèfle) = 0
+**Objectif** : avoir, une fois les cartes révélées, la plus petite somme de valeurs parmi tous les joueurs — et rester en dessous de 100 points de score cumulé au fil des manches.
 
-Maintenant que la valeur de chaque a été introduite, le but du jeu est d'avoir ,en faisant la somme des valeurs de nos cartes, la plus petite valeur totales pour pouvoir gagner et donc lorsqu'on pense avoir parmis tout les joueurs la plus petite somme des valeurs de nos cartes, il faut dire GABO (AU DEBUT DE NOTRE TOUR SEULEMENT !) pour révéler les cartes de tout le monde et voir si la personne qui a dit GABO avait réellement la plus petite somme. Et donc ici deux cas s'offre aux joueurs: 
-- Soit la personne qui a dit GABO a strictement moins que tout les autres (exemple: je dis GABO avec un as et un 2 cela me fait une valeur totale de 1+2=3 et en face de moi j'ai deux joueurs, le premier avec un 4 et un as celui fait 1+4=5 et le deuxieme avec un 7 et un valet cela lui fait 7+11=18 et donc j'ai gagné) et donc chaque joueur ajoute dans son score la valeur de son jeu à la fin du jeu et la personne a avoir dit GABO ajoute 0 (je reprends mon exemple précedent, le premier joueur en face aura donc un score de 5 et le deuxieme un score de 18).
-- Soit un des joueurs en face a une valeur inférieur ou égale à celui qui a dit GABO et ici seule la personne ayant raté son GABO ajoute 35 à son score.
-Lorsqu'un GABO a lieu on récupere toute les cartes, on les mélange et on redistribue 4 cartes chacune ainsi de suite comme expliquer plus haut.
-Et donc le but du jeu est de ne pas dépasser un score de 100 car lorsque qu'on a 100 ou plus on est éliminé et donc la partie continu avec un joueur en moins mais on maintient les memes score.
+## Mise en place d'une manche
 
+1. Chaque joueur reçoit **4 cartes**, distribuées face cachée. Il ne peut pas les regarder à ce stade.
+2. Le reste des cartes forme la **pioche**.
+3. **Observation initiale** : tous les joueurs regardent en même temps **2 de leurs 4 cartes pendant 5 secondes**, puis elles se retournent. Il faut désormais s'appuyer sur sa mémoire.
+4. Le premier joueur de la toute première manche de la partie est choisi au hasard. Le tour de jeu se poursuit ensuite dans le **sens horaire**.
 
-Ajouter à tout cela il y a des pouvoirs offerts avec certaines cartes piochés qui sont:
-- Si le joueur pioche un 7 ou 8: dans ce cas si et seulement si la carte pioché est dépose dans la pile, le joueur peut observer une des ses cartes durant 5 secondes mais parcontre si il pioche un 7 ou un 8 et qu'il l'echange avec une des cartes de son jeu dans ce cas la, le pouvoir du 7 ou du 8 est annuler.
-- Si le joueur pioche un 9 ou 10: dans ce cas si et seulement si la carte pioché est dépose dans la pile, le joueur peut observer une des cartes d'un adversaire durant 5 secondes mais parcontre si il pioche un 9 ou un 10 et qu'il l'echange avec une des cartes de son jeu dans ce cas la, le pouvoir du 9 ou du 10 est annuler.
-- Si le joueur pioche un valet ou une dame: dans ce cas si et seulement si la carte pioché est dépose dans la pile le joueur peut échanger et observer (durant 5 secondes) une de ses cartes avec la carte d'un de ses adversaires mais parcontre si il pioche un valet ou une dame et qu'il l'echange avec une des cartes de son jeu dans ce cas la, le pouvoir du valet ou de la dame est annuler.
+## Déroulement d'un tour
 
-Note importante par rapport à ces pouvoirs, le joueur qui a possibilité d'avoir acces à un pouvoir n'est pas dans l'obligation de l'utiliser si il souhaite piocher et jeter la carte dans la pile sans rien faire il en a le droit.
+À son tour, un joueur pioche une carte : lui seul peut la regarder. Il doit alors choisir entre deux actions :
+
+- **Défausser** : poser la carte piochée, face visible, sur la pile de défausse au centre de la table.
+- **Échanger** : remplacer une des cartes de sa main par la carte piochée. La carte remplacée est alors posée, face visible, sur la pile de défausse.
+
+Le tour passe ensuite au joueur suivant, qui fait le même choix, et ainsi de suite.
+
+## Le snap : jeter une carte identique
+
+À tout moment — même si ce n'est pas son tour — un joueur qui pense avoir une carte de la **même valeur** que celle actuellement au sommet de la pile de défausse peut la jeter par-dessus :
+
+- **S'il a raison** : sa carte rejoint la défausse et il se retrouve avec une carte de moins dans son jeu (bon pour lui).
+- **S'il se trompe** : il reçoit une carte de pénalité, piochée sans la regarder et ajoutée à sa main.
+
+> **Exemple** — Parmi les 2 cartes observées au début, je me souviens avoir un 6 et un 8. Le joueur avant moi pioche et défausse un 8. Ce n'est pas mon tour, mais tant que ce 8 reste au sommet de la défausse, je peux y déposer mon propre 8.
+
+## Valeur des cartes
+
+| Carte | Valeur |
+|---|---|
+| As | 1 |
+| 2 à 10 | valeur numérique de la carte |
+| Valet | 11 |
+| Dame | 12 |
+| Roi ♥ cœur ou ♦ carreau (rouge) | 35 |
+| Roi ♠ pique ou ♣ trèfle (noir) | 0 |
+
+## Les pouvoirs des cartes piochées
+
+Certaines cartes déclenchent un pouvoir **si et seulement si elles sont défaussées directement** (et non échangées contre une carte de sa main) :
+
+| Carte piochée | Pouvoir (si défaussée) |
+|---|---|
+| 7 ou 8 | Regarder une de ses **propres** cartes pendant 5 secondes |
+| 9 ou 10 | Regarder une carte d'un **adversaire** pendant 5 secondes |
+| Valet ou Dame | **Échanger** une de ses cartes avec celle d'un adversaire, et regarder la carte reçue pendant 5 secondes |
+
+Utiliser un pouvoir est **optionnel** : un joueur peut toujours défausser sa carte sans rien faire d'autre.
+
+⚠️ **Important** : si la carte piochée (7, 8, 9, 10, Valet ou Dame) est échangée contre une carte de sa main plutôt que défaussée directement, le pouvoir est annulé.
+
+## Annoncer GABO et fin de manche
+
+Un joueur qui pense avoir la plus petite somme de cartes parmi tous les joueurs peut annoncer **GABO** — mais uniquement **au début de son propre tour**, avant de piocher. Toutes les cartes sont alors immédiatement révélées.
+
+Deux cas possibles :
+
+- **Le joueur qui a dit GABO a strictement la plus petite somme** : il marque 0 point, et tous les autres joueurs ajoutent à leur score total la somme des valeurs de leurs cartes.
+  > **Exemple** — Je dis GABO avec un As et un 2 (total 3). Le premier adversaire a un 4 et un As (total 5), le second a un 7 et un Valet (total 18). J'ai gagné : le premier ajoute 5 à son score, le second ajoute 18. Moi, j'ajoute 0.
+- **Un autre joueur a une somme inférieure ou égale à la sienne** : seul le joueur ayant raté son GABO ajoute **35 points** à son score. Les autres n'ajoutent rien ce tour-ci.
+
+Après un GABO, toutes les cartes sont ramassées et mélangées, et une nouvelle manche commence (redistribution de 4 cartes chacun, nouvelle observation initiale, etc.).
+
+## Élimination et fin de partie
+
+Un joueur atteignant **100 points ou plus** est éliminé. La partie continue avec les joueurs restants (les scores déjà acquis sont conservés), jusqu'à ce qu'il n'en reste plus qu'un seul : il remporte la partie.
 
 ---
 
@@ -79,11 +111,12 @@ Le moteur de jeu (`engine.py`) ne connaît rien du transport (HTTP/WebSocket) : 
 
 ### Choix d'implémentation et hypothèses
 
-Le README des règles ne précise pas tout ; voici les choix faits pour lever les ambiguïtés :
+Les règles du jeu ne précisent pas tout ; voici les choix faits pour lever les ambiguïtés :
 - **Snap** : la comparaison se fait sur la valeur/rang de la carte (un 8 quelle que soit sa couleur), pas sur la couleur exacte.
 - **Appel de GABO** : dès qu'il est annoncé, toutes les cartes sont immédiatement révélées et la manche se termine (les autres joueurs ne rejouent pas de dernier tour).
 - **Premier joueur de chaque nouvelle manche** : après un GABO, c'est le joueur suivant (sens horaire) après celui qui avait commencé la manche précédente qui commence, en sautant les joueurs éliminés.
-- **Observation initiale en mode local** : comme un seul écran est partagé, l'observation des 2 cartes de départ se fait joueur par joueur (chacun ayant ses 5 secondes), plutôt que simultanément comme ce serait le cas avec un appareil par joueur.
+- **Carte de départ de la défausse** : une fois que tout le monde a observé ses 2 cartes de départ, une carte est automatiquement retournée de la pioche vers la défausse avant même que le premier tour soit joué. Cela permet de tenter un snap dès le début de la manche, sans attendre qu'un joueur pioche et défausse.
+- **Observation initiale** : les 2 cartes regardées au début sont toujours les 2 mêmes (les 2 premières de la main), pas un choix libre du joueur — cela reste fidèle à l'esprit "on observe une partie fixe de son jeu et on retient". En mode local (un seul écran partagé), cette observation se fait joueur par joueur (chacun avec ses 5 secondes), plutôt que simultanément comme ce serait le cas avec un appareil par joueur.
 
 ### Installation
 

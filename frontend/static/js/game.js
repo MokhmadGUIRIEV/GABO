@@ -97,37 +97,74 @@ function render() {
   };
   document.getElementById("phase-label").textContent = phaseLabels[s.phase] || s.phase;
 
-  document.getElementById("scoreboard").innerHTML = s.players
-    .map((p) => {
-      const classes = ["score-chip"];
-      if (p.id === s.current_player_id && ["turn", "awaiting_decision", "power_pending"].includes(s.phase)) {
-        classes.push("current");
-      }
-      if (p.eliminated) classes.push("eliminated");
-      return `<div class="${classes.join(" ")}">${p.name}: ${p.score}</div>`;
-    })
-    .join("");
-
   document.getElementById("draw-pile-count").textContent = `${s.draw_pile_count} cartes`;
   document.getElementById("discard-pile-card").innerHTML = s.top_discard
     ? cardFace(s.top_discard)
     : cardFace(null);
 
-  document.getElementById("players-grid").innerHTML = s.players
-    .map((p) => {
+  renderSeats(s);
+  renderPhasePanel(s);
+  renderGlobalActions(s);
+}
+
+// Fixed seating around the table, per player count. Seat 0 is always at the
+// bottom (closest to the shared device), others distributed around it like a
+// real round table. The seat exactly opposite (2p, or the "far" seat on 4p/6p)
+// is rotated 180° so it visually faces the bottom seat, like sitting across
+// from someone at a table.
+const SEAT_LAYOUTS = {
+  2: [
+    { top: 88, left: 50, rotate: 0 },
+    { top: 12, left: 50, rotate: 180 },
+  ],
+  3: [
+    { top: 88, left: 50, rotate: 0 },
+    { top: 22, left: 12, rotate: 0 },
+    { top: 22, left: 88, rotate: 0 },
+  ],
+  4: [
+    { top: 88, left: 50, rotate: 0 },
+    { top: 50, left: 8, rotate: 0 },
+    { top: 12, left: 50, rotate: 180 },
+    { top: 50, left: 92, rotate: 0 },
+  ],
+  5: [
+    { top: 90, left: 50, rotate: 0 },
+    { top: 62, left: 8, rotate: 0 },
+    { top: 15, left: 24, rotate: 0 },
+    { top: 15, left: 76, rotate: 0 },
+    { top: 62, left: 92, rotate: 0 },
+  ],
+  6: [
+    { top: 90, left: 50, rotate: 0 },
+    { top: 68, left: 6, rotate: 0 },
+    { top: 24, left: 6, rotate: 0 },
+    { top: 8, left: 50, rotate: 180 },
+    { top: 24, left: 94, rotate: 0 },
+    { top: 68, left: 94, rotate: 0 },
+  ],
+};
+
+function renderSeats(s) {
+  const layout = SEAT_LAYOUTS[s.players.length] || SEAT_LAYOUTS[6];
+  const html = s.players
+    .map((p, i) => {
+      const seat = layout[i] || layout[layout.length - 1];
       const isTurn = p.id === s.current_player_id && ["turn", "awaiting_decision", "power_pending"].includes(s.phase);
+      const classes = ["seat"];
+      if (seat.rotate === 180) classes.push("rotate-180");
+      if (isTurn) classes.push("is-turn");
+      if (p.eliminated) classes.push("eliminated");
       const hand = p.hand
         .map((slot) => (slot.hidden ? cardBack() : cardFace(slot.card)))
         .join("");
-      return `<div class="player-card ${isTurn ? "is-turn" : ""}">
-        <h3><span>${p.name}${p.eliminated ? " ☠" : ""}</span><span>${p.score} pts</span></h3>
+      return `<div class="${classes.join(" ")}" style="top:${seat.top}%; left:${seat.left}%;">
+        <div class="seat-header">${p.name}${p.eliminated ? " ☠" : ""} — ${p.score} pts</div>
         <div class="hand-row">${hand || '<span class="hint">Pas de cartes</span>'}</div>
       </div>`;
     })
     .join("");
-
-  renderPhasePanel(s);
-  renderGlobalActions(s);
+  document.getElementById("seats-container").innerHTML = html;
 }
 
 function renderGlobalActions(s) {
@@ -241,40 +278,31 @@ function closeModal() {
 // Initial peek gate
 // ---------------------------------------------------------------------
 
+const INITIAL_PEEK_INDICES = [0, 1];
+
 function openInitialPeekGate(playerId) {
   showGate(`
     <h2>${playerName(playerId)}</h2>
     <p>Assure-toi que les autres joueurs ne regardent pas l'écran.</p>
-    <p class="hint">Choisis 2 de tes 4 cartes à regarder pendant 5 secondes.</p>
-    <div class="row" id="peek-slots" style="justify-content:center;"></div>
+    <p class="hint">Tes 2 premières cartes vont se retourner pendant 5 secondes.</p>
+    <div class="row" style="justify-content:center;">${cardBack()}${cardBack()}</div>
     <div class="row" style="justify-content:center; margin-top:16px;">
+      <button id="reveal-initial-btn">Je suis prêt, regarder mes cartes</button>
+    </div>
+    <div class="row" style="justify-content:center; margin-top:10px;">
       <button class="secondary" onclick="closeGate()">Annuler / je ne suis pas ${playerName(playerId)}</button>
     </div>
   `);
-  const chosen = [];
-  const slotsEl = document.getElementById("peek-slots");
-  slotsEl.innerHTML = [0, 1, 2, 3]
-    .map((i) => `<button class="card-btn" data-i="${i}">${cardBack()}</button>`)
-    .join("");
-  slotsEl.querySelectorAll("button").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const i = Number(btn.dataset.i);
-      if (chosen.includes(i)) return;
-      chosen.push(i);
-      btn.disabled = true;
-      btn.style.opacity = "0.4";
-      if (chosen.length === 2) {
-        try {
-          const resp = await call("peek_initial", { player_id: playerId, indices: chosen });
-          const player = resp.state.players.find((p) => p.id === playerId);
-          showInitialPeekReveal(playerId, player, chosen);
-        } catch (e) {
-          log("Erreur: " + e.message);
-          closeGate();
-        }
-      }
-    });
-  });
+  document.getElementById("reveal-initial-btn").onclick = async () => {
+    try {
+      const resp = await call("peek_initial", { player_id: playerId, indices: INITIAL_PEEK_INDICES });
+      const player = resp.state.players.find((p) => p.id === playerId);
+      showInitialPeekReveal(playerId, player, INITIAL_PEEK_INDICES);
+    } catch (e) {
+      log("Erreur: " + e.message);
+      closeGate();
+    }
+  };
 }
 
 function showInitialPeekReveal(playerId, player, indices) {

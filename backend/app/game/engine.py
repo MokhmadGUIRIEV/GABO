@@ -214,6 +214,10 @@ class GameEngine:
             raise GameError("Ce n'est pas la phase d'observation initiale.")
         self.phase = Phase.TURN
         self.initial_peek_deadline = None
+        if self.deck.top_discard is None:
+            # Retourne la première carte de la défausse : les joueurs peuvent
+            # déjà tenter un snap dessus avant même que le premier tour soit joué.
+            self.deck.discard(self.deck.draw())
 
     # ------------------------------------------------------------------
     # Turn actions

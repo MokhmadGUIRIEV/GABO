@@ -64,6 +64,32 @@ def test_start_round_deals_four_cards_each_and_enters_initial_peek():
     assert engine.round_number == 1
 
 
+def test_finish_initial_peek_flips_a_starting_discard_card():
+    engine = make_engine(3)
+    engine.start_round()
+    assert engine.deck.top_discard is None
+    draw_count_before = len(engine.deck.draw_pile)
+    engine.finish_initial_peek()
+    assert engine.deck.top_discard is not None
+    assert len(engine.deck.draw_pile) == draw_count_before - 1
+    # Snapping must already be possible before anyone has taken a turn.
+    snapper = engine.players[1]
+    snapper.hand[0] = engine.deck.top_discard
+    assert engine.snap_attempt(snapper.id, 0) is True
+
+
+def test_finish_initial_peek_does_not_flip_twice_across_calls():
+    engine = make_engine(2)
+    engine.start_round()
+    engine.finish_initial_peek()
+    top = engine.deck.top_discard
+    # A later call within the same round (e.g. a defensive re-invocation)
+    # must not burn another card once a discard top already exists.
+    engine.phase = Phase.INITIAL_PEEK
+    engine.finish_initial_peek()
+    assert engine.deck.top_discard == top
+
+
 def test_engine_rejects_invalid_player_counts():
     with pytest.raises(GameError):
         GameEngine(["a"], {"a": "A"})

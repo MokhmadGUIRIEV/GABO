@@ -22,28 +22,27 @@
         <span id="phase-label" class="hint">Chargement...</span>
         <span id="round-label" class="hint"></span>
       </div>
-      <div class="scoreboard" id="scoreboard"></div>
 
-      <div class="table-area">
-        <div class="pile">
-          <div class="pile-label">Pioche</div>
-          <div class="card back" id="draw-pile-card"></div>
-          <div class="hint" id="draw-pile-count"></div>
-        </div>
-        <div class="pile">
-          <div class="pile-label">Défausse</div>
-          <div id="discard-pile-card"></div>
+      <div class="table-wrap">
+        <div class="table-surface" id="table-surface">
+          <div class="center-piles">
+            <div class="pile">
+              <div class="pile-label">Pioche</div>
+              <div class="card back" id="draw-pile-card"></div>
+              <div class="hint" id="draw-pile-count"></div>
+            </div>
+            <div class="pile">
+              <div class="pile-label">Défausse</div>
+              <div id="discard-pile-card"></div>
+            </div>
+          </div>
+          <div id="seats-container"></div>
         </div>
       </div>
 
       <div id="phase-panel"></div>
 
       <div class="action-bar" id="global-actions"></div>
-    </div>
-
-    <div class="panel">
-      <h2 style="margin-top:0;">Joueurs</h2>
-      <div class="players-grid" id="players-grid"></div>
     </div>
 
     <div class="panel">

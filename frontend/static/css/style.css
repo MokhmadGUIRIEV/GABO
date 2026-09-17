@@ -108,24 +108,73 @@ a.link { color: var(--accent); }
   color: var(--accent);
 }
 
-.scoreboard { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
-.score-chip {
-  background: #0b2e22;
-  border-radius: 20px;
-  padding: 6px 14px;
-  font-size: 0.85rem;
-  border: 1px solid rgba(255,255,255,0.1);
-}
-.score-chip.current { border-color: var(--accent); box-shadow: 0 0 8px rgba(224,176,57,0.5); }
-.score-chip.eliminated { opacity: 0.4; text-decoration: line-through; }
+/* --- Table (round-table seating) --- */
 
-.table-area {
+.table-wrap {
   display: flex;
   justify-content: center;
-  gap: 30px;
+  margin: 16px 0;
+}
+
+.table-surface {
+  position: relative;
+  width: 100%;
+  max-width: 640px;
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, #1e6b4e 0%, #144e39 70%, #0e3c2c 100%);
+  border: 10px solid #3a2a15;
+  box-shadow: inset 0 0 40px rgba(0,0,0,0.45), 0 8px 20px rgba(0,0,0,0.4);
+}
+
+.center-piles {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  gap: 22px;
   align-items: center;
-  margin: 20px 0 28px;
+  z-index: 1;
+}
+
+.seat {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  width: 150px;
+}
+.seat.rotate-180 { transform: translate(-50%, -50%) rotate(180deg); }
+
+.seat-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(6, 20, 15, 0.75);
+  border-radius: 14px;
+  padding: 3px 10px;
+  font-size: 0.8rem;
+  margin-bottom: 6px;
+  border: 1px solid rgba(255,255,255,0.12);
+  white-space: nowrap;
+}
+.seat.is-turn .seat-header { border-color: var(--accent); box-shadow: 0 0 8px rgba(224,176,57,0.6); color: var(--accent); }
+.seat.eliminated .seat-header { opacity: 0.45; text-decoration: line-through; }
+
+.seat .hand-row {
+  display: flex;
+  gap: 6px;
   flex-wrap: wrap;
+  justify-content: center;
+}
+.seat .card, .seat .card.back { width: 42px; height: 60px; font-size: 0.85rem; }
+.seat .hand-slot .slot-index { display: none; }
+
+@media (max-width: 560px) {
+  .table-surface { max-width: 100%; }
+  .seat { width: 110px; }
+  .seat .card, .seat .card.back { width: 34px; height: 48px; font-size: 0.7rem; }
+  .center-piles { gap: 12px; }
 }
 
 .pile { text-align: center; }
@@ -171,23 +220,6 @@ a.link { color: var(--accent); }
   font-size: 0.7rem;
   color: var(--text-dim);
 }
-
-.players-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 14px;
-  margin-bottom: 20px;
-}
-
-.player-card {
-  background: #0b2e22;
-  border-radius: var(--radius);
-  padding: 14px;
-  border: 1px solid rgba(255,255,255,0.08);
-}
-.player-card.is-turn { border-color: var(--accent); }
-.player-card h3 { margin: 0 0 8px; font-size: 1rem; display:flex; justify-content: space-between; }
-.hand-row { display: flex; gap: 14px; flex-wrap: wrap; padding-bottom: 16px; }
 
 .gate-overlay {
   position: fixed;
