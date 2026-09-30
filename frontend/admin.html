@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GABO — Administration</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=6" />
+</head>
+<body>
+  <div class="wrap">
+    <div class="top-nav">
+      <h1 class="brand" style="margin:0;">GABO</h1>
+      <div class="row">
+        <span class="hint" id="welcome"></span>
+        <a class="link" href="/lobby.html">&larr; Lobby</a>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Administration — comptes</h2>
+      <p class="hint">
+        Supprimer un compte le retire du classement ; ses résultats restent visibles (sous son pseudo)
+        dans l'historique des autres joueurs.
+      </p>
+      <div class="error-msg" id="admin-error"></div>
+      <div id="users-container" class="hint">Chargement...</div>
+    </div>
+  </div>
+
+  <script src="/static/js/api.js?v=6"></script>
+  <script>
+    let pendingDeleteId = null;
+
+    function formatDate(iso) {
+      return iso ? new Date(iso).toLocaleString("fr-FR") : "-";
+    }
+
+    function renderUsers(users) {
+      const container = document.getElementById("users-container");
+      const rows = users
+        .map((u) => {
+          let action = "";
+          if (u.is_admin) {
+            action = `<span class="hint">admin</span>`;
+          } else if (pendingDeleteId === u.id) {
+            action = `<button class="danger" data-confirm="${u.id}">Confirmer</button>
+                      <button class="secondary" data-cancel="1">Annuler</button>`;
+          } else {
+            action = `<button class="secondary" data-delete="${u.id}">Supprimer</button>`;
+          }
+          return `<tr>
+            <td>${esc(u.display_name)}</td>
+            <td>${esc(u.email)}</td>
+            <td>${formatDate(u.created_at)}</td>
+            <td>${u.games_played}</td>
+            <td>${u.wins}</td>
+            <td><div class="row">${action}</div></td>
+          </tr>`;
+        })
+        .join("");
+      container.innerHTML = `
+        <p>${users.length} compte(s)</p>
+        <table class="history-table">
+          <thead><tr><th>Pseudo</th><th>Email</th><th>Inscrit le</th><th>Parties en ligne</th><th>Victoires</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+
+      container.querySelectorAll("[data-delete]").forEach((btn) => {
+        btn.onclick = () => {
+          pendingDeleteId = Number(btn.dataset.delete);
+          renderUsers(users);
+        };
+      });
+      container.querySelectorAll("[data-cancel]").forEach((btn) => {
+        btn.onclick = () => {
+          pendingDeleteId = null;
+          renderUsers(users);
+        };
+      });
+      container.querySelectorAll("[data-confirm]").forEach((btn) => {
+        btn.onclick = async () => {
+          const errorEl = document.getElementById("admin-error");
+          errorEl.textContent = "";
+          try {
+            await Api.adminDeleteUser(btn.dataset.confirm);
+          } catch (e) {
+            errorEl.textContent = e.message;
+          }
+          pendingDeleteId = null;
+          loadUsers();
+        };
+      });
+    }
+
+    async function loadUsers() {
+      try {
+        renderUsers(await Api.adminUsers());
+      } catch (e) {
+        document.getElementById("users-container").textContent = e.message;
+      }
+    }
+
+    (async () => {
+      let user;
+      try {
+        user = await Api.me();
+      } catch (e) {
+        window.location.href = "/index.html?next=/admin.html";
+        return;
+      }
+      if (!user.is_admin) {
+        window.location.href = "/lobby.html";
+        return;
+      }
+      document.getElementById("welcome").textContent = `Connecté en tant que ${user.display_name}`;
+      loadUsers();
+    })();
+  </script>
+</body>
+</html>

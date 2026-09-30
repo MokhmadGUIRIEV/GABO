@@ -10,6 +10,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import FileResponse
 
 from .db import init_db
+from .routes.admin import router as admin_router
 from .routes.auth import router as auth_router
 from .routes.rooms import router as rooms_router
 from .ws import router as ws_router
@@ -26,6 +27,7 @@ app = FastAPI(title="GABO")
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, same_site="lax", https_only=IS_PRODUCTION)
 
 app.include_router(auth_router)
+app.include_router(admin_router)
 app.include_router(rooms_router)
 app.include_router(ws_router)
 

@@ -22,3 +22,7 @@ services:
         generateValue: true
       - key: DATABASE_URL
         sync: false
+      # Email(s) of the admin account(s), comma-separated. Set it yourself in
+      # the Render dashboard (Environment tab); never commit it here.
+      - key: GABO_ADMIN_EMAILS
+        sync: false

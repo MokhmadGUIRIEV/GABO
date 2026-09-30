@@ -237,3 +237,70 @@ def test_local_games_do_not_count_in_leaderboard(clients):
     before = host.get("/api/rooms/leaderboard").json()
     assert room["mode"] == "local"
     assert all(e["display_name"] not in ("Alice", "Bob") for e in before)
+
+
+# ---------------------------------------------------------------------------
+# Account deletion and admin
+# ---------------------------------------------------------------------------
+
+def test_delete_account_requires_password(clients):
+    host, _, _ = clients
+    r = host.request("DELETE", "/api/auth/me", json={"password": "wrong"})
+    assert r.status_code == 401
+    assert host.get("/api/auth/me").status_code == 200
+
+
+def test_deleting_account_keeps_other_players_history(clients):
+    host, friend, _ = clients
+    code = finish_online_game(host, friend, winner="host")
+    host_email = host.get("/api/auth/me").json()["email"]
+    local = host.post("/api/rooms", json={"player_names": ["A", "B"]}).json()["code"]
+
+    r = host.request("DELETE", "/api/auth/me", json={"password": "secret123"})
+    assert r.status_code == 200
+    # Logged out, and the account is really gone.
+    assert host.get("/api/auth/me").status_code == 401
+    assert host.post("/api/auth/login", json={"email": host_email, "password": "secret123"}).status_code == 401
+
+    # The friend still sees the online game the deleted player created.
+    games = friend.get("/api/rooms/history/mine").json()
+    game = next(g for g in games if g["room_code"] == code)
+    assert {r["player_name"] for r in game["results"]} == {"Hote", "Ami"}
+    # The deleted player no longer counts in the leaderboard.
+    board = friend.get("/api/rooms/leaderboard").json()
+    assert sum(1 for e in board if e["wins"] and e["display_name"] == "Hote" and e["games_played"] == 1) == 0
+    friend_row = next(e for e in board if e["is_you"])
+    assert friend_row["games_played"] == 1 and friend_row["wins"] == 0
+
+    # The deleted player's local game is gone with the account.
+    assert local not in [g["room_code"] for g in friend.get("/api/rooms/history/mine").json()]
+
+
+def test_admin_area_is_only_for_the_configured_email(clients, monkeypatch):
+    host, friend, stranger = clients
+    host_email = host.get("/api/auth/me").json()["email"]
+    friend_id = friend.get("/api/auth/me").json()["id"]
+
+    monkeypatch.delenv("GABO_ADMIN_EMAILS", raising=False)
+    assert host.get("/api/admin/users").status_code == 403
+
+    monkeypatch.setenv("GABO_ADMIN_EMAILS", host_email.upper())
+    assert host.get("/api/auth/me").json()["is_admin"] is True
+    assert friend.get("/api/auth/me").json()["is_admin"] is False
+    assert friend.get("/api/admin/users").status_code == 403
+    assert friend.request("DELETE", f"/api/admin/users/{friend_id}").status_code == 403
+
+    users = host.get("/api/admin/users").json()
+    assert any(u["id"] == friend_id for u in users)
+
+    me_id = host.get("/api/auth/me").json()["id"]
+    assert host.request("DELETE", f"/api/admin/users/{me_id}").status_code == 400
+    assert host.request("DELETE", f"/api/admin/users/{friend_id}").status_code == 200
+    assert friend.get("/api/auth/me").status_code == 401
+    assert all(u["id"] != friend_id for u in host.get("/api/admin/users").json())
+
+
+def test_admin_api_requires_login(clients):
+    host, _, _ = clients
+    host.post("/api/auth/logout")
+    assert host.get("/api/admin/users").status_code == 401
