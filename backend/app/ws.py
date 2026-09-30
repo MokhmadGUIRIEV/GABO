@@ -101,11 +101,18 @@ def _dispatch(room: RoomSession, msg: dict) -> None:
         raise GameError(f"Action inconnue: {action}")
 
 
+async def _refuse(websocket: WebSocket, code: int) -> None:
+    # Accept first: a close frame sent before the handshake completes never
+    # reaches the browser, which then can't tell why it was refused.
+    await websocket.accept()
+    await websocket.close(code=code)
+
+
 @router.websocket("/ws/rooms/{code}")
 async def room_websocket(websocket: WebSocket, code: str):
     room = room_manager.get(code)
     if room is None:
-        await websocket.close(code=4404)
+        await _refuse(websocket, 4404)
         return
 
     session_user_id = websocket.session.get("user_id")
@@ -113,13 +120,13 @@ async def room_websocket(websocket: WebSocket, code: str):
         # Each connection is bound to the seat its logged-in user claimed.
         bound_player_id = room.player_id_for_user(session_user_id)
         if bound_player_id is None:
-            await websocket.close(code=4403)
+            await _refuse(websocket, 4403)
             return
     else:
         # Local "pass & play": the owner's single browser drives every seat.
         bound_player_id = None
         if session_user_id != room.owner_user_id:
-            await websocket.close(code=4401)
+            await _refuse(websocket, 4401)
             return
 
     await websocket.accept()

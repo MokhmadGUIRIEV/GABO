@@ -71,9 +71,18 @@ def test_join_is_idempotent_and_visible_to_everyone(clients):
 def test_user_who_did_not_join_cannot_connect(clients):
     host, friend, stranger = clients
     code = create_online_room(host, friend)
-    with pytest.raises(WebSocketDisconnect):
+    with pytest.raises(WebSocketDisconnect) as refused:
         with stranger.websocket_connect(f"/ws/rooms/{code}") as ws:
             ws.receive_json()
+    assert refused.value.code == 4403
+
+
+def test_unknown_room_is_reported_as_gone(clients):
+    host, _, _ = clients
+    with pytest.raises(WebSocketDisconnect) as refused:
+        with host.websocket_connect("/ws/rooms/NOPE0") as ws:
+            ws.receive_json()
+    assert refused.value.code == 4404
 
 
 def test_only_host_can_start_and_no_join_after_start(clients):

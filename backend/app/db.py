@@ -5,10 +5,26 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-DB_PATH = os.environ.get("GABO_DB_PATH", os.path.join(os.path.dirname(__file__), "..", "gabo.db"))
-DATABASE_URL = f"sqlite:///{DB_PATH}"
+def _database_url() -> str:
+    url = os.environ.get("DATABASE_URL")
+    if url:
+        # Hosted Postgres (e.g. Neon) hands out postgres:// or postgresql://
+        # URLs; point SQLAlchemy at the psycopg (v3) driver we install.
+        for prefix in ("postgres://", "postgresql://"):
+            if url.startswith(prefix):
+                return "postgresql+psycopg://" + url[len(prefix):]
+        return url
+    db_path = os.environ.get("GABO_DB_PATH", os.path.join(os.path.dirname(__file__), "..", "gabo.db"))
+    return f"sqlite:///{db_path}"
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+
+DATABASE_URL = _database_url()
+
+if DATABASE_URL.startswith("sqlite"):
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+else:
+    # pool_pre_ping: free hosted databases drop idle connections.
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 

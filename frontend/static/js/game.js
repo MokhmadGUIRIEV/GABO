@@ -79,10 +79,39 @@ async function refreshPublic() {
   render();
 }
 
+// Close codes sent by the server when (re)connecting cannot work.
+const WS_ROOM_GONE = 4404;
+const WS_NOT_ALLOWED = new Set([4401, 4403]);
+const MAX_RECONNECT_ATTEMPTS = 10;
+let reconnectAttempts = 0;
+
 function connectWs() {
   ws = new WebSocket(wsUrl(`/ws/rooms/${ROOM_CODE}`));
-  ws.onopen = () => log("Connecté à la salle.");
-  ws.onclose = () => log("Connexion perdue. Rechargez la page pour réessayer.");
+  ws.onopen = () => {
+    log(reconnectAttempts > 0 ? "Reconnecté." : "Connecté à la salle.");
+    reconnectAttempts = 0;
+  };
+  ws.onclose = (event) => {
+    for (const { reject } of pending.values()) reject(new Error("Connexion perdue."));
+    pending.clear();
+    if (event.code === WS_ROOM_GONE) {
+      showFatal("Cette partie n'existe plus (le serveur a peut-être redémarré).");
+      return;
+    }
+    if (WS_NOT_ALLOWED.has(event.code)) {
+      showFatal("Tu ne fais pas partie de cette partie.");
+      return;
+    }
+    // Phones drop the connection when the screen locks: come back on our
+    // own, the server gives the same seat back to the same account.
+    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      log("Connexion perdue. Recharge la page pour réessayer.");
+      return;
+    }
+    reconnectAttempts += 1;
+    log("Connexion perdue, reconnexion…");
+    setTimeout(connectWs, Math.min(1000 * reconnectAttempts, 5000));
+  };
   ws.onmessage = (event) => {
     const msg = JSON.parse(event.data);
     if (ONLINE && msg.you) myId = msg.you;
@@ -931,4 +960,13 @@ function showFatal(message) {
     myId = roomInfo.you;
   }
   connectWs();
+  // Free hosting puts the server to sleep after a while without HTTP
+  // traffic (which would wipe in-memory games): keep it awake while a game
+  // page is open, and keep the WebSocket from being closed as idle.
+  setInterval(() => {
+    fetch("/api/health").catch(() => {});
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      call("get_state", { viewer_id: ONLINE ? "__me__" : "__public__" }).catch(() => {});
+    }
+  }, 4 * 60 * 1000);
 })();

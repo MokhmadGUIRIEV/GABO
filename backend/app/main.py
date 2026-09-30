@@ -14,16 +14,27 @@ from .routes.auth import router as auth_router
 from .routes.rooms import router as rooms_router
 from .ws import router as ws_router
 
-SECRET_KEY = os.environ.get("GABO_SECRET_KEY") or secrets.token_hex(32)
+IS_PRODUCTION = os.environ.get("GABO_ENV") == "production"
+SECRET_KEY = os.environ.get("GABO_SECRET_KEY")
+if not SECRET_KEY:
+    if IS_PRODUCTION:
+        # A random key would log everyone out on every restart/wake-up.
+        raise RuntimeError("GABO_SECRET_KEY doit être défini en production.")
+    SECRET_KEY = secrets.token_hex(32)
 
 app = FastAPI(title="GABO")
-app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, same_site="lax")
+app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, same_site="lax", https_only=IS_PRODUCTION)
 
 app.include_router(auth_router)
 app.include_router(rooms_router)
 app.include_router(ws_router)
 
-FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
+FRONTEND_DIR = (Path(__file__).resolve().parents[2] / "frontend").resolve()
+
+
+@app.get("/api/health")
+def health() -> dict:
+    return {"ok": True}
 
 
 @app.on_event("startup")
@@ -36,7 +47,9 @@ if FRONTEND_DIR.exists():
 
     @app.get("/{page:path}")
     def serve_frontend(page: str = ""):
-        candidate = FRONTEND_DIR / (page or "index.html")
-        if candidate.is_file():
+        # Resolve then check containment: the path comes from the URL and may
+        # contain encoded "../" trying to escape the frontend directory.
+        candidate = (FRONTEND_DIR / (page or "index.html")).resolve()
+        if candidate.is_file() and candidate.is_relative_to(FRONTEND_DIR):
             return FileResponse(candidate)
         return FileResponse(FRONTEND_DIR / "index.html")

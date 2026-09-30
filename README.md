@@ -82,7 +82,7 @@ Ce dépôt contient une implémentation jouable du GABO.
 
 - **Backend** : Python (FastAPI + WebSockets), moteur de jeu pur (aucune dépendance web) testé unitairement avec pytest.
 - **Frontend** : HTML/CSS/JS vanilla, sans framework, responsive.
-- **Base de données** : SQLite (comptes joueurs, historique des parties et des scores).
+- **Base de données** : SQLite en local, Postgres (Neon) une fois en ligne (comptes joueurs, historique des parties et des scores).
 - **Authentification** : email + mot de passe (hash bcrypt), session par cookie signé.
 
 ### Architecture
@@ -101,6 +101,7 @@ backend/
   tests/
     test_engine.py     -> tests unitaires du moteur de jeu
     test_online.py     -> tests du mode en ligne (rejoindre, sécurité des identités)
+    test_app.py        -> tests de l'application (fichiers servis, santé)
 frontend/
   index.html, lobby.html, game.html
   static/css, static/js
@@ -145,6 +146,27 @@ python -m uvicorn app.main:app --reload
 Puis ouvrez `http://127.0.0.1:8000` dans votre navigateur et créez un compte :
 - **Sur un seul appareil** : créez une partie en indiquant les noms des 2 à 6 joueurs, puis suivez les instructions à l'écran.
 - **En ligne** : cliquez sur « Créer une partie en ligne ». Pour tester seul sur votre ordinateur, ouvrez une deuxième fenêtre en navigation privée (ou un autre navigateur), créez un second compte, et rejoignez la partie avec son code.
+
+### Mettre le jeu en ligne (gratuit : Render + Neon)
+
+Le jeu tourne sur **Render** (serveur web gratuit) avec une base de données **Neon** (Postgres gratuit) pour conserver les comptes et l'historique. Tout est déjà configuré dans `render.yaml` : il n'y a aucun code à modifier.
+
+1. **Base de données (Neon)**
+   - Créer un compte gratuit sur [neon.tech](https://neon.tech).
+   - Créer un projet en choisissant une région en Europe (Frankfurt).
+   - Copier la *connection string* (elle commence par `postgresql://`).
+2. **Serveur (Render)**
+   - Créer un compte gratuit sur [render.com](https://render.com) en se connectant avec GitHub.
+   - Cliquer sur **New → Blueprint**, puis choisir le dépôt `GABO` : Render lit automatiquement `render.yaml`.
+   - Coller la connection string Neon dans le champ `DATABASE_URL`, puis valider.
+   - Attendre la fin du déploiement (quelques minutes) : Render affiche l'adresse du jeu, du type `https://gabo-xxxx.onrender.com`.
+3. **Jouer** : partager cette adresse avec ses amis. Chacun crée son compte, puis l'un crée une partie en ligne et partage son code ou son lien.
+
+Chaque mise à jour fusionnée dans la branche `main` est redéployée automatiquement.
+
+**Limites de l'offre gratuite** :
+- Après 15 minutes sans activité, le serveur se met en veille ; la première visite suivante prend environ une minute le temps qu'il redémarre. Tant qu'une page de partie est ouverte, le jeu le garde éveillé.
+- Les parties en cours sont gardées en mémoire : un redémarrage du serveur (mise en veille, nouveau déploiement) interrompt la partie en cours. Les comptes et l'historique, eux, sont conservés dans Neon.
 
 ### Lancer les tests
 
