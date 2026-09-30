@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -26,13 +27,18 @@ class UserOut(BaseModel):
 
 
 class RoomCreateRequest(BaseModel):
-    player_names: list[str] = Field(min_length=2, max_length=6)
+    mode: Literal["local", "online"] = "local"
+    player_names: list[str] = Field(default_factory=list, max_length=6)
 
 
 class RoomOut(BaseModel):
     code: str
+    mode: str
     player_ids: list[str]
     player_names: dict[str, str]
+    started: bool
+    you: str | None = None
+    host_player_id: str | None = None
 
 
 class PlayerResultOut(BaseModel):

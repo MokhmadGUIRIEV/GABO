@@ -97,17 +97,23 @@ backend/
     db.py, models.py   -> SQLite / SQLAlchemy (comptes, historique)
     routes/            -> auth (inscription/connexion) et salles de jeu
     ws.py              -> WebSocket temps réel reliant le moteur de jeu au client
-    rooms.py           -> gestion des salles en mémoire
+    rooms.py           -> gestion des salles en mémoire (mode local et en ligne)
   tests/
-    test_engine.py     -> 20 tests unitaires du moteur de jeu
+    test_engine.py     -> tests unitaires du moteur de jeu
+    test_online.py     -> tests du mode en ligne (rejoindre, sécurité des identités)
 frontend/
   index.html, lobby.html, game.html
   static/css, static/js
 ```
 
-Le moteur de jeu (`engine.py`) ne connaît rien du transport (HTTP/WebSocket) : il expose une méthode `public_state(viewer_id)` qui ne révèle que ce que ce joueur a le droit de voir à cet instant. Cette séparation permet de réutiliser le moteur tel quel :
-- aujourd'hui en **mode local "pass & play"** : un seul navigateur pilote toute la table, et l'interface demande de faire circuler l'appareil entre les joueurs (avec des écrans de transition qui cachent les cartes tant que le bon joueur n'a pas confirmé être devant l'écran) ;
-- demain en **mode en ligne** : il suffira de connecter chaque joueur avec son propre WebSocket et son propre `viewer_id`, sans toucher au moteur de jeu.
+Le moteur de jeu (`engine.py`) ne connaît rien du transport (HTTP/WebSocket) : il expose une méthode `public_state(viewer_id)` qui ne révèle que ce que ce joueur a le droit de voir à cet instant. Le même moteur sert aux deux modes de jeu.
+
+### Deux modes de jeu
+
+- **Sur un seul appareil ("pass & play")** : le créateur saisit les noms de 2 à 6 joueurs qui se partagent l'appareil. L'interface indique à qui de jouer et demande de faire circuler l'appareil au bon moment.
+- **En ligne** : chacun joue depuis son propre appareil, avec son propre compte. L'hôte crée la partie et partage le code (ou le lien) ; ses amis rejoignent depuis le lobby, puis l'hôte lance la partie dès que 2 à 6 joueurs sont présents. Chaque joueur se voit en bas de la table et ne voit que ce qu'il a le droit de voir.
+
+**Sécurité du mode en ligne** : chaque connexion WebSocket est liée au siège du compte connecté. Le serveur ignore complètement l'identité que le navigateur prétend avoir : un joueur ne peut ni jouer à la place d'un autre, ni demander à voir ses cartes, ni lancer une manche s'il n'est pas l'hôte. Les pseudos des autres joueurs sont systématiquement échappés avant affichage.
 
 ### Choix d'implémentation et hypothèses
 
@@ -116,7 +122,9 @@ Les règles du jeu ne précisent pas tout ; voici les choix faits pour lever les
 - **Appel de GABO** : dès qu'il est annoncé, toutes les cartes sont immédiatement révélées et la manche se termine (les autres joueurs ne rejouent pas de dernier tour).
 - **Premier joueur de chaque nouvelle manche** : après un GABO, c'est le joueur suivant (sens horaire) après celui qui avait commencé la manche précédente qui commence, en sautant les joueurs éliminés.
 - **Carte de départ de la défausse** : une fois que tout le monde a observé ses 2 cartes de départ, une carte est automatiquement retournée de la pioche vers la défausse avant même que le premier tour soit joué. Cela permet de tenter un snap dès le début de la manche, sans attendre qu'un joueur pioche et défausse.
-- **Observation initiale** : les 2 cartes regardées au début sont toujours les 2 mêmes (les 2 premières de la main), pas un choix libre du joueur — cela reste fidèle à l'esprit "on observe une partie fixe de son jeu et on retient". En mode local (un seul écran partagé), cette observation se fait joueur par joueur (chacun avec ses 5 secondes), plutôt que simultanément comme ce serait le cas avec un appareil par joueur.
+- **Observation initiale** : chaque joueur choisit librement les 2 cartes qu'il veut regarder, en cliquant dessus directement sur la table. En mode local (un seul écran partagé), cette observation se fait joueur par joueur ; en ligne, tout le monde observe en même temps sur son propre écran. Si un joueur en ligne ne choisit pas ses cartes (absent, onglet fermé...), la manche démarre quand même au bout de 45 secondes.
+- **Moment du snap** : en mode local, il n'est possible qu'entre deux tours (un seul écran pour tout le monde) ; en ligne, chacun peut tenter un snap à tout moment où la défausse a une carte, même pendant la réflexion d'un autre joueur.
+- **Hôte en ligne** : seul l'hôte (le créateur de la partie) lance la partie et chaque nouvelle manche.
 
 ### Installation
 
@@ -134,7 +142,9 @@ cd backend
 python -m uvicorn app.main:app --reload
 ```
 
-Puis ouvrez `http://127.0.0.1:8000` dans votre navigateur : créez un compte, créez une partie en indiquant les noms des 2 à 6 joueurs qui vont se partager l'appareil, et jouez en suivant les instructions à l'écran (l'interface indique à qui de jouer et demande de faire circuler l'appareil au bon moment).
+Puis ouvrez `http://127.0.0.1:8000` dans votre navigateur et créez un compte :
+- **Sur un seul appareil** : créez une partie en indiquant les noms des 2 à 6 joueurs, puis suivez les instructions à l'écran.
+- **En ligne** : cliquez sur « Créer une partie en ligne ». Pour tester seul sur votre ordinateur, ouvrez une deuxième fenêtre en navigation privée (ou un autre navigateur), créez un second compte, et rejoignez la partie avec son code.
 
 ### Lancer les tests
 

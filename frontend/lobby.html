@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GABO — Lobby</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=2" />
+  <link rel="stylesheet" href="/static/css/style.css?v=3" />
 </head>
 <body>
   <div class="wrap">
@@ -17,7 +17,27 @@
     </div>
 
     <div class="panel">
-      <h2>Nouvelle partie (jeu local, un seul appareil)</h2>
+      <h2>Jouer en ligne avec des amis</h2>
+      <p class="hint">
+        Chacun joue depuis son propre appareil. Crée une partie et partage le code (ou le lien)
+        à tes amis : ils doivent avoir un compte GABO pour rejoindre.
+      </p>
+      <div class="row">
+        <button id="create-online-btn">Créer une partie en ligne</button>
+      </div>
+      <div class="error-msg" id="online-error"></div>
+
+      <h3 style="margin-bottom:6px;">Rejoindre une partie</h3>
+      <div class="row">
+        <input type="text" id="join-code" placeholder="Code de la partie (ex: K7Q2Z)" maxlength="10"
+               style="max-width:240px; text-transform:uppercase;" />
+        <button class="secondary" id="join-btn">Rejoindre</button>
+      </div>
+      <div class="error-msg" id="join-error"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Nouvelle partie sur un seul appareil</h2>
       <p class="hint">
         Entrez les noms des joueurs (2 à 6) qui vont se partager cet appareil à tour de rôle.
         Chacun regardera ses propres cartes en tenant l'écran caché aux autres au bon moment.
@@ -39,7 +59,7 @@
     </div>
   </div>
 
-  <script src="/static/js/api.js?v=2"></script>
+  <script src="/static/js/api.js?v=3"></script>
   <script>
     let user = null;
 
@@ -49,7 +69,7 @@
       names.forEach((name, i) => {
         const div = document.createElement("div");
         div.className = "player-name-input";
-        div.innerHTML = `<span>${i + 1}.</span> <input type="text" data-idx="${i}" value="${name}" placeholder="Nom du joueur ${i + 1}" />`;
+        div.innerHTML = `<span>${i + 1}.</span> <input type="text" data-idx="${i}" value="${esc(name)}" placeholder="Nom du joueur ${i + 1}" />`;
         container.appendChild(div);
       });
     }
@@ -95,6 +115,38 @@
       }
     });
 
+    document.getElementById("create-online-btn").addEventListener("click", async () => {
+      const errorEl = document.getElementById("online-error");
+      errorEl.textContent = "";
+      try {
+        const room = await Api.createOnlineRoom();
+        window.location.href = `/game.html?code=${encodeURIComponent(room.code)}`;
+      } catch (e) {
+        errorEl.textContent = e.message;
+      }
+    });
+
+    async function joinByCode() {
+      const errorEl = document.getElementById("join-error");
+      errorEl.textContent = "";
+      const code = document.getElementById("join-code").value.trim().toUpperCase();
+      if (!code) {
+        errorEl.textContent = "Entre le code de la partie.";
+        return;
+      }
+      try {
+        const room = await Api.joinRoom(code);
+        window.location.href = `/game.html?code=${encodeURIComponent(room.code)}`;
+      } catch (e) {
+        errorEl.textContent = e.message;
+      }
+    }
+
+    document.getElementById("join-btn").addEventListener("click", joinByCode);
+    document.getElementById("join-code").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") joinByCode();
+    });
+
     document.getElementById("logout-btn").addEventListener("click", async () => {
       await Api.logout();
       window.location.href = "/index.html";
@@ -128,11 +180,11 @@
           const results = g.results
             .slice()
             .sort((a, b) => a.final_score - b.final_score)
-            .map((r) => `${r.player_name}: ${r.final_score}${r.is_winner ? " 🏆" : ""}${r.eliminated ? " (éliminé)" : ""}`)
+            .map((r) => `${esc(r.player_name)}: ${r.final_score}${r.is_winner ? " 🏆" : ""}${r.eliminated ? " (éliminé)" : ""}`)
             .join(" · ");
           tr.innerHTML = `
             <td>${formatDate(g.started_at)}</td>
-            <td>${g.room_code}</td>
+            <td>${esc(g.room_code)}</td>
             <td>${g.rounds_played}</td>
             <td>${g.finished ? "Terminée" : "En cours"}</td>
             <td>${results || "-"}</td>

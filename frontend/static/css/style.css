@@ -264,3 +264,6 @@ table.summary th, table.summary td { text-align: left; padding: 6px 8px; border-
 @media (max-width: 600px) {
   .card { width: 52px; height: 76px; font-size: 0.9rem; }
 }
+
+.waiting-list { margin: 6px 0 14px; padding-left: 20px; }
+.waiting-list li { padding: 3px 0; }

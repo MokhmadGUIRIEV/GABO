@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GABO</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=2" />
+  <link rel="stylesheet" href="/static/css/style.css?v=3" />
 </head>
 <body>
   <div class="wrap">
@@ -38,12 +38,14 @@
     </div>
   </div>
 
-  <script src="/static/js/api.js?v=2"></script>
+  <script src="/static/js/api.js?v=3"></script>
   <script>
+    const NEXT = safeNextPath(new URLSearchParams(window.location.search).get("next")) || "/lobby.html";
+
     (async () => {
       try {
         await Api.me();
-        window.location.href = "/lobby.html";
+        window.location.href = NEXT;
       } catch (e) {
         // Not logged in, stay on this page.
       }
@@ -57,7 +59,7 @@
           document.getElementById("login-email").value.trim(),
           document.getElementById("login-password").value
         );
-        window.location.href = "/lobby.html";
+        window.location.href = NEXT;
       } catch (e) {
         errorEl.textContent = e.message;
       }
@@ -72,7 +74,7 @@
           document.getElementById("reg-name").value.trim(),
           document.getElementById("reg-password").value
         );
-        window.location.href = "/lobby.html";
+        window.location.href = NEXT;
       } catch (e) {
         errorEl.textContent = e.message;
       }
