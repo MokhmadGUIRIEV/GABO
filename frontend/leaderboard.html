@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GABO — Classement</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=7" />
+</head>
+<body>
+  <header class="site-nav" id="site-nav"></header>
+  <div class="wrap">
+    <div class="panel">
+      <h2>Classement</h2>
+      <p class="hint">
+        Nombre de victoires en parties en ligne. À égalité, le joueur ayant joué le moins de parties passe devant.
+        Les parties sur un seul appareil ne comptent pas.
+      </p>
+      <div id="leaderboard-container" class="hint">Chargement...</div>
+    </div>
+  </div>
+
+  <script src="/static/js/api.js?v=7"></script>
+  <script src="/static/js/nav.js?v=7"></script>
+  <script>
+    async function loadLeaderboard() {
+      const container = document.getElementById("leaderboard-container");
+      try {
+        const entries = await Api.leaderboard();
+        if (entries.length === 0) {
+          container.textContent = "Aucune partie en ligne terminée pour l'instant.";
+          return;
+        }
+        const medals = { 1: "🥇", 2: "🥈", 3: "🥉" };
+        const rows = entries
+          .map((e) => `
+            <tr class="${e.is_you ? "is-you" : ""}">
+              <td>${medals[e.rank] || e.rank}</td>
+              <td>${esc(e.display_name)}${e.is_you ? " (toi)" : ""}</td>
+              <td>${e.wins}</td>
+              <td>${e.games_played}</td>
+            </tr>`)
+          .join("");
+        container.innerHTML = `
+          <div class="table-scroll">
+            <table class="history-table">
+              <thead><tr><th>Rang</th><th>Joueur</th><th>Victoires</th><th>Parties</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>`;
+      } catch (e) {
+        container.textContent = "Impossible de charger le classement.";
+      }
+    }
+
+    initPage().then((user) => user && loadLeaderboard());
+  </script>
+</body>
+</html>

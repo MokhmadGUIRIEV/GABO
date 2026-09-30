@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GABO — Historique</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=7" />
+</head>
+<body>
+  <header class="site-nav" id="site-nav"></header>
+  <div class="wrap">
+    <div class="panel">
+      <h2>Historique de mes parties</h2>
+      <p class="hint">Les parties que tu as créées, et les parties en ligne auxquelles tu as participé.</p>
+      <div id="history-container" class="hint">Chargement...</div>
+    </div>
+  </div>
+
+  <script src="/static/js/api.js?v=7"></script>
+  <script src="/static/js/nav.js?v=7"></script>
+  <script>
+    async function loadHistory() {
+      const container = document.getElementById("history-container");
+      try {
+        const games = await Api.history();
+        if (games.length === 0) {
+          container.textContent = "Aucune partie jouée pour l'instant.";
+          return;
+        }
+        const rows = games
+          .map((g) => {
+            const results = g.results
+              .slice()
+              .sort((a, b) => a.final_score - b.final_score)
+              .map((r) => `${esc(r.player_name)}: ${r.final_score}${r.is_winner ? " 🏆" : ""}${r.eliminated ? " (éliminé)" : ""}`)
+              .join(" · ");
+            return `<tr>
+              <td>${formatDate(g.started_at)}</td>
+              <td>${esc(g.room_code)}</td>
+              <td>${g.mode === "online" ? "En ligne" : "Un appareil"}</td>
+              <td>${g.rounds_played}</td>
+              <td>${g.finished ? "Terminée" : "En cours"}</td>
+              <td>${results || "-"}</td>
+            </tr>`;
+          })
+          .join("");
+        container.innerHTML = `
+          <div class="table-scroll">
+            <table class="history-table">
+              <thead><tr><th>Date</th><th>Salle</th><th>Mode</th><th>Manches</th><th>Statut</th><th>Résultats</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>`;
+      } catch (e) {
+        container.textContent = "Impossible de charger l'historique.";
+      }
+    }
+
+    initPage().then((user) => user && loadHistory());
+  </script>
+</body>
+</html>

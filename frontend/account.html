@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GABO — Mon compte</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=7" />
+</head>
+<body>
+  <header class="site-nav" id="site-nav"></header>
+  <div class="wrap">
+    <div class="panel">
+      <h2>Mon profil</h2>
+      <label>Email</label>
+      <input type="email" id="profile-email" disabled />
+      <label for="profile-name">Pseudo (visible par les autres joueurs)</label>
+      <input type="text" id="profile-name" maxlength="100" />
+      <div class="row" style="margin-top:12px;">
+        <button id="save-name-btn">Enregistrer le pseudo</button>
+      </div>
+      <div class="error-msg" id="name-error"></div>
+      <div class="success-msg" id="name-ok"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Changer le mot de passe</h2>
+      <label for="pw-current">Mot de passe actuel</label>
+      <input type="password" id="pw-current" autocomplete="current-password" />
+      <label for="pw-new">Nouveau mot de passe (6 caractères minimum)</label>
+      <input type="password" id="pw-new" autocomplete="new-password" />
+      <label for="pw-confirm">Confirme le nouveau mot de passe</label>
+      <input type="password" id="pw-confirm" autocomplete="new-password" />
+      <div class="row" style="margin-top:12px;">
+        <button id="change-pw-btn">Changer le mot de passe</button>
+      </div>
+      <div class="error-msg" id="pw-error"></div>
+      <div class="success-msg" id="pw-ok"></div>
+    </div>
+
+    <div class="panel danger-zone">
+      <h2>Supprimer mon compte</h2>
+      <p class="hint">
+        Ton compte sera définitivement supprimé et tu disparaîtras du classement.
+        Tes résultats resteront visibles (sous ton pseudo) dans l'historique des autres joueurs.
+      </p>
+      <label for="delete-password">Mot de passe</label>
+      <input type="password" id="delete-password" autocomplete="current-password" />
+      <div class="row" style="margin-top:12px;" id="delete-actions"></div>
+      <div class="error-msg" id="delete-error"></div>
+    </div>
+  </div>
+
+  <script src="/static/js/api.js?v=7"></script>
+  <script src="/static/js/nav.js?v=7"></script>
+  <script>
+    let currentUser = null;
+
+    function flash(okId, errId, message) {
+      document.getElementById(errId).textContent = "";
+      document.getElementById(okId).textContent = message;
+    }
+
+    function fail(okId, errId, message) {
+      document.getElementById(okId).textContent = "";
+      document.getElementById(errId).textContent = message;
+    }
+
+    // --- Pseudo ---
+    document.getElementById("save-name-btn").addEventListener("click", async () => {
+      const name = document.getElementById("profile-name").value.trim();
+      if (!name) return fail("name-ok", "name-error", "Le pseudo ne peut pas être vide.");
+      try {
+        currentUser = await Api.updateProfile(name);
+        document.getElementById("profile-name").value = currentUser.display_name;
+        renderNav(currentUser);
+        flash("name-ok", "name-error", "Pseudo mis à jour.");
+      } catch (e) {
+        fail("name-ok", "name-error", e.message);
+      }
+    });
+
+    // --- Mot de passe ---
+    document.getElementById("change-pw-btn").addEventListener("click", async () => {
+      const current = document.getElementById("pw-current").value;
+      const next = document.getElementById("pw-new").value;
+      const confirm = document.getElementById("pw-confirm").value;
+      if (!current) return fail("pw-ok", "pw-error", "Entre ton mot de passe actuel.");
+      if (next.length < 6) return fail("pw-ok", "pw-error", "Le nouveau mot de passe doit faire au moins 6 caractères.");
+      if (next !== confirm) return fail("pw-ok", "pw-error", "Les deux nouveaux mots de passe ne sont pas identiques.");
+      try {
+        await Api.changePassword(current, next);
+        ["pw-current", "pw-new", "pw-confirm"].forEach((id) => (document.getElementById(id).value = ""));
+        flash("pw-ok", "pw-error", "Mot de passe changé.");
+      } catch (e) {
+        fail("pw-ok", "pw-error", e.message);
+      }
+    });
+
+    // --- Suppression (confirmation en deux clics, sans popup) ---
+    let confirmingDelete = false;
+
+    function renderDeleteActions() {
+      const box = document.getElementById("delete-actions");
+      if (!confirmingDelete) {
+        box.innerHTML = `<button class="danger" id="delete-btn">Supprimer mon compte</button>`;
+        document.getElementById("delete-btn").onclick = () => {
+          document.getElementById("delete-error").textContent = "";
+          if (!document.getElementById("delete-password").value) {
+            document.getElementById("delete-error").textContent = "Entre ton mot de passe.";
+            return;
+          }
+          confirmingDelete = true;
+          renderDeleteActions();
+        };
+        return;
+      }
+      box.innerHTML = `
+        <span class="warn-text">Sûr ? C'est définitif.</span>
+        <button class="danger" id="delete-confirm-btn">Oui, supprimer</button>
+        <button class="secondary" id="delete-cancel-btn">Annuler</button>`;
+      document.getElementById("delete-cancel-btn").onclick = () => {
+        confirmingDelete = false;
+        renderDeleteActions();
+      };
+      document.getElementById("delete-confirm-btn").onclick = async () => {
+        try {
+          await Api.deleteMyAccount(document.getElementById("delete-password").value);
+          window.location.href = "/index.html";
+        } catch (e) {
+          document.getElementById("delete-error").textContent = e.message;
+          confirmingDelete = false;
+          renderDeleteActions();
+        }
+      };
+    }
+
+    renderDeleteActions();
+
+    initPage().then((user) => {
+      if (!user) return;
+      currentUser = user;
+      document.getElementById("profile-email").value = user.email;
+      document.getElementById("profile-name").value = user.display_name;
+    });
+  </script>
+</body>
+</html>

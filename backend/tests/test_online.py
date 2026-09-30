@@ -304,3 +304,32 @@ def test_admin_api_requires_login(clients):
     host, _, _ = clients
     host.post("/api/auth/logout")
     assert host.get("/api/admin/users").status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Account settings
+# ---------------------------------------------------------------------------
+
+def test_change_display_name_shows_up_in_leaderboard(clients):
+    host, friend, _ = clients
+    finish_online_game(host, friend, winner="host")
+    r = host.patch("/api/auth/me", json={"display_name": "  Champion  "})
+    assert r.status_code == 200 and r.json()["display_name"] == "Champion"
+    assert host.get("/api/auth/me").json()["display_name"] == "Champion"
+    assert next(e for e in friend.get("/api/rooms/leaderboard").json() if e["display_name"] == "Champion")
+    assert host.patch("/api/auth/me", json={"display_name": "   "}).status_code == 400
+    assert host.patch("/api/auth/me", json={"display_name": ""}).status_code == 422
+
+
+def test_change_password(clients):
+    host, _, _ = clients
+    email = host.get("/api/auth/me").json()["email"]
+    bad = host.post("/api/auth/password", json={"current_password": "nope", "new_password": "newsecret1"})
+    assert bad.status_code == 401
+    short = host.post("/api/auth/password", json={"current_password": "secret123", "new_password": "123"})
+    assert short.status_code == 422
+    ok = host.post("/api/auth/password", json={"current_password": "secret123", "new_password": "newsecret1"})
+    assert ok.status_code == 200
+    host.post("/api/auth/logout")
+    assert host.post("/api/auth/login", json={"email": email, "password": "secret123"}).status_code == 401
+    assert host.post("/api/auth/login", json={"email": email, "password": "newsecret1"}).status_code == 200

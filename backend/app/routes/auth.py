@@ -8,7 +8,14 @@ from ..accounts import delete_account, is_admin
 from ..db import get_db
 from ..deps import get_current_user
 from ..models import User
-from ..schemas import DeleteAccountRequest, LoginRequest, RegisterRequest, UserOut
+from ..schemas import (
+    ChangePasswordRequest,
+    DeleteAccountRequest,
+    LoginRequest,
+    RegisterRequest,
+    UpdateProfileRequest,
+    UserOut,
+)
 from ..security import hash_password, verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -54,6 +61,27 @@ def logout(request: Request):
 @router.get("/me", response_model=UserOut)
 def me(user: User = Depends(get_current_user)):
     return _user_out(user)
+
+
+@router.patch("/me", response_model=UserOut)
+def update_me(payload: UpdateProfileRequest, user: User = Depends(get_current_user),
+              db: Session = Depends(get_db)):
+    name = payload.display_name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Le pseudo ne peut pas être vide.")
+    user.display_name = name
+    db.commit()
+    return _user_out(user)
+
+
+@router.post("/password")
+def change_password(payload: ChangePasswordRequest, user: User = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
+    if not verify_password(payload.current_password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Mot de passe actuel incorrect.")
+    user.password_hash = hash_password(payload.new_password)
+    db.commit()
+    return {"ok": True}
 
 
 @router.delete("/me")

@@ -33,8 +33,16 @@ def test_frontend_route_cannot_read_files_outside_frontend(client, path):
 
 
 def test_frontend_pages_and_static_files_still_served(client):
-    assert "<title>GABO — Lobby</title>" in client.get("/lobby.html").text
+    assert "<title>GABO — Jouer</title>" in client.get("/lobby.html").text
+    for page, title in [
+        ("account", "Mon compte"),
+        ("leaderboard", "Classement"),
+        ("history", "Historique"),
+        ("admin", "Administration"),
+    ]:
+        assert f"<title>GABO — {title}</title>" in client.get(f"/{page}.html").text
     assert client.get("/static/js/game.js").status_code == 200
+    assert client.get("/static/js/nav.js").status_code == 200
 
 
 def test_health_endpoint(client):
