@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GABO — Lobby</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=2" />
+  <link rel="stylesheet" href="/static/css/style.css?v=5" />
 </head>
 <body>
   <div class="wrap">
@@ -17,7 +17,27 @@
     </div>
 
     <div class="panel">
-      <h2>Nouvelle partie (jeu local, un seul appareil)</h2>
+      <h2>Jouer en ligne avec des amis</h2>
+      <p class="hint">
+        Chacun joue depuis son propre appareil. Crée une partie et partage le code (ou le lien)
+        à tes amis : ils doivent avoir un compte GABO pour rejoindre.
+      </p>
+      <div class="row">
+        <button id="create-online-btn">Créer une partie en ligne</button>
+      </div>
+      <div class="error-msg" id="online-error"></div>
+
+      <h3 style="margin-bottom:6px;">Rejoindre une partie</h3>
+      <div class="row">
+        <input type="text" id="join-code" placeholder="Code de la partie (ex: K7Q2Z)" maxlength="10"
+               style="max-width:240px; text-transform:uppercase;" />
+        <button class="secondary" id="join-btn">Rejoindre</button>
+      </div>
+      <div class="error-msg" id="join-error"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Nouvelle partie sur un seul appareil</h2>
       <p class="hint">
         Entrez les noms des joueurs (2 à 6) qui vont se partager cet appareil à tour de rôle.
         Chacun regardera ses propres cartes en tenant l'écran caché aux autres au bon moment.
@@ -34,12 +54,18 @@
     </div>
 
     <div class="panel">
+      <h2>Classement</h2>
+      <p class="hint">Nombre de victoires en parties en ligne. À égalité, le joueur ayant joué le moins de parties passe devant.</p>
+      <div id="leaderboard-container" class="hint">Chargement...</div>
+    </div>
+
+    <div class="panel">
       <h2>Historique de mes parties</h2>
       <div id="history-container" class="hint">Chargement...</div>
     </div>
   </div>
 
-  <script src="/static/js/api.js?v=2"></script>
+  <script src="/static/js/api.js?v=5"></script>
   <script>
     let user = null;
 
@@ -49,7 +75,7 @@
       names.forEach((name, i) => {
         const div = document.createElement("div");
         div.className = "player-name-input";
-        div.innerHTML = `<span>${i + 1}.</span> <input type="text" data-idx="${i}" value="${name}" placeholder="Nom du joueur ${i + 1}" />`;
+        div.innerHTML = `<span>${i + 1}.</span> <input type="text" data-idx="${i}" value="${esc(name)}" placeholder="Nom du joueur ${i + 1}" />`;
         container.appendChild(div);
       });
     }
@@ -95,6 +121,38 @@
       }
     });
 
+    document.getElementById("create-online-btn").addEventListener("click", async () => {
+      const errorEl = document.getElementById("online-error");
+      errorEl.textContent = "";
+      try {
+        const room = await Api.createOnlineRoom();
+        window.location.href = `/game.html?code=${encodeURIComponent(room.code)}`;
+      } catch (e) {
+        errorEl.textContent = e.message;
+      }
+    });
+
+    async function joinByCode() {
+      const errorEl = document.getElementById("join-error");
+      errorEl.textContent = "";
+      const code = document.getElementById("join-code").value.trim().toUpperCase();
+      if (!code) {
+        errorEl.textContent = "Entre le code de la partie.";
+        return;
+      }
+      try {
+        const room = await Api.joinRoom(code);
+        window.location.href = `/game.html?code=${encodeURIComponent(room.code)}`;
+      } catch (e) {
+        errorEl.textContent = e.message;
+      }
+    }
+
+    document.getElementById("join-btn").addEventListener("click", joinByCode);
+    document.getElementById("join-code").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") joinByCode();
+    });
+
     document.getElementById("logout-btn").addEventListener("click", async () => {
       await Api.logout();
       window.location.href = "/index.html";
@@ -118,7 +176,7 @@
         table.className = "history-table";
         table.innerHTML = `
           <thead>
-            <tr><th>Date</th><th>Salle</th><th>Manches</th><th>Statut</th><th>Résultats</th></tr>
+            <tr><th>Date</th><th>Salle</th><th>Mode</th><th>Manches</th><th>Statut</th><th>Résultats</th></tr>
           </thead>
           <tbody></tbody>
         `;
@@ -128,11 +186,12 @@
           const results = g.results
             .slice()
             .sort((a, b) => a.final_score - b.final_score)
-            .map((r) => `${r.player_name}: ${r.final_score}${r.is_winner ? " 🏆" : ""}${r.eliminated ? " (éliminé)" : ""}`)
+            .map((r) => `${esc(r.player_name)}: ${r.final_score}${r.is_winner ? " 🏆" : ""}${r.eliminated ? " (éliminé)" : ""}`)
             .join(" · ");
           tr.innerHTML = `
             <td>${formatDate(g.started_at)}</td>
-            <td>${g.room_code}</td>
+            <td>${esc(g.room_code)}</td>
+            <td>${g.mode === "online" ? "En ligne" : "Un appareil"}</td>
             <td>${g.rounds_played}</td>
             <td>${g.finished ? "Terminée" : "En cours"}</td>
             <td>${results || "-"}</td>
@@ -146,10 +205,39 @@
       }
     }
 
+    async function loadLeaderboard() {
+      const container = document.getElementById("leaderboard-container");
+      try {
+        const entries = await Api.leaderboard();
+        if (entries.length === 0) {
+          container.textContent = "Aucune partie en ligne terminée pour l'instant.";
+          return;
+        }
+        const medals = { 1: "🥇", 2: "🥈", 3: "🥉" };
+        const rows = entries
+          .map((e) => `
+            <tr class="${e.is_you ? "is-you" : ""}">
+              <td>${medals[e.rank] || e.rank}</td>
+              <td>${esc(e.display_name)}${e.is_you ? " (toi)" : ""}</td>
+              <td>${e.wins}</td>
+              <td>${e.games_played}</td>
+            </tr>`)
+          .join("");
+        container.innerHTML = `
+          <table class="history-table">
+            <thead><tr><th>Rang</th><th>Joueur</th><th>Victoires</th><th>Parties jouées</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>`;
+      } catch (e) {
+        container.textContent = "Impossible de charger le classement.";
+      }
+    }
+
     (async () => {
       try {
         user = await Api.me();
         document.getElementById("welcome").textContent = `Connecté en tant que ${user.display_name}`;
+        loadLeaderboard();
         loadHistory();
       } catch (e) {
         window.location.href = "/index.html";

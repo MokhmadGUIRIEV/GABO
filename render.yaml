@@ -1,0 +1,24 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+# Deploys the whole app (FastAPI backend + static frontend) as one free web
+# service. The database is external (Neon, free Postgres): paste its
+# connection string when Render asks for DATABASE_URL.
+services:
+  - type: web
+    name: gabo
+    runtime: python
+    plan: free
+    # Closest region to players in France (default would be in the US).
+    region: frankfurt
+    branch: main
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: GABO_ENV
+        value: production
+      - key: GABO_SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false

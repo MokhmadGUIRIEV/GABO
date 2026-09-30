@@ -82,7 +82,7 @@ Ce dépôt contient une implémentation jouable du GABO.
 
 - **Backend** : Python (FastAPI + WebSockets), moteur de jeu pur (aucune dépendance web) testé unitairement avec pytest.
 - **Frontend** : HTML/CSS/JS vanilla, sans framework, responsive.
-- **Base de données** : SQLite (comptes joueurs, historique des parties et des scores).
+- **Base de données** : SQLite en local, Postgres (Neon) une fois en ligne (comptes joueurs, historique des parties et des scores).
 - **Authentification** : email + mot de passe (hash bcrypt), session par cookie signé.
 
 ### Architecture
@@ -97,17 +97,26 @@ backend/
     db.py, models.py   -> SQLite / SQLAlchemy (comptes, historique)
     routes/            -> auth (inscription/connexion) et salles de jeu
     ws.py              -> WebSocket temps réel reliant le moteur de jeu au client
-    rooms.py           -> gestion des salles en mémoire
+    rooms.py           -> gestion des salles en mémoire (mode local et en ligne)
   tests/
-    test_engine.py     -> 20 tests unitaires du moteur de jeu
+    test_engine.py     -> tests unitaires du moteur de jeu
+    test_online.py     -> tests du mode en ligne (rejoindre, sécurité des identités)
+    test_app.py        -> tests de l'application (fichiers servis, santé)
 frontend/
   index.html, lobby.html, game.html
   static/css, static/js
 ```
 
-Le moteur de jeu (`engine.py`) ne connaît rien du transport (HTTP/WebSocket) : il expose une méthode `public_state(viewer_id)` qui ne révèle que ce que ce joueur a le droit de voir à cet instant. Cette séparation permet de réutiliser le moteur tel quel :
-- aujourd'hui en **mode local "pass & play"** : un seul navigateur pilote toute la table, et l'interface demande de faire circuler l'appareil entre les joueurs (avec des écrans de transition qui cachent les cartes tant que le bon joueur n'a pas confirmé être devant l'écran) ;
-- demain en **mode en ligne** : il suffira de connecter chaque joueur avec son propre WebSocket et son propre `viewer_id`, sans toucher au moteur de jeu.
+Le moteur de jeu (`engine.py`) ne connaît rien du transport (HTTP/WebSocket) : il expose une méthode `public_state(viewer_id)` qui ne révèle que ce que ce joueur a le droit de voir à cet instant. Le même moteur sert aux deux modes de jeu.
+
+### Deux modes de jeu
+
+- **Sur un seul appareil ("pass & play")** : le créateur saisit les noms de 2 à 6 joueurs qui se partagent l'appareil. L'interface indique à qui de jouer et demande de faire circuler l'appareil au bon moment.
+- **En ligne** : chacun joue depuis son propre appareil, avec son propre compte. L'hôte crée la partie et partage le code (ou le lien) ; ses amis rejoignent depuis le lobby, puis l'hôte lance la partie dès que 2 à 6 joueurs sont présents. Chaque joueur se voit en bas de la table et ne voit que ce qu'il a le droit de voir.
+
+**Historique et classement** : une partie en ligne terminée apparaît dans l'historique de tous ceux qui l'ont jouée. Le classement du lobby compte les victoires de chaque joueur en partie en ligne (à égalité de victoires, celui qui a joué le moins de parties passe devant). Les parties sur un seul appareil n'y comptent pas, puisque leurs joueurs sont de simples noms et non des comptes.
+
+**Sécurité du mode en ligne** : chaque connexion WebSocket est liée au siège du compte connecté. Le serveur ignore complètement l'identité que le navigateur prétend avoir : un joueur ne peut ni jouer à la place d'un autre, ni demander à voir ses cartes, ni lancer une manche s'il n'est pas l'hôte. Les pseudos des autres joueurs sont systématiquement échappés avant affichage.
 
 ### Choix d'implémentation et hypothèses
 
@@ -116,7 +125,9 @@ Les règles du jeu ne précisent pas tout ; voici les choix faits pour lever les
 - **Appel de GABO** : dès qu'il est annoncé, toutes les cartes sont immédiatement révélées et la manche se termine (les autres joueurs ne rejouent pas de dernier tour).
 - **Premier joueur de chaque nouvelle manche** : après un GABO, c'est le joueur suivant (sens horaire) après celui qui avait commencé la manche précédente qui commence, en sautant les joueurs éliminés.
 - **Carte de départ de la défausse** : une fois que tout le monde a observé ses 2 cartes de départ, une carte est automatiquement retournée de la pioche vers la défausse avant même que le premier tour soit joué. Cela permet de tenter un snap dès le début de la manche, sans attendre qu'un joueur pioche et défausse.
-- **Observation initiale** : les 2 cartes regardées au début sont toujours les 2 mêmes (les 2 premières de la main), pas un choix libre du joueur — cela reste fidèle à l'esprit "on observe une partie fixe de son jeu et on retient". En mode local (un seul écran partagé), cette observation se fait joueur par joueur (chacun avec ses 5 secondes), plutôt que simultanément comme ce serait le cas avec un appareil par joueur.
+- **Observation initiale** : chaque joueur choisit librement les 2 cartes qu'il veut regarder, en cliquant dessus directement sur la table. En mode local (un seul écran partagé), cette observation se fait joueur par joueur ; en ligne, tout le monde observe en même temps sur son propre écran. Si un joueur en ligne ne choisit pas ses cartes (absent, onglet fermé...), la manche démarre quand même au bout de 45 secondes.
+- **Moment du snap** : en mode local, il n'est possible qu'entre deux tours (un seul écran pour tout le monde) ; en ligne, chacun peut tenter un snap à tout moment où la défausse a une carte, même pendant la réflexion d'un autre joueur.
+- **Hôte en ligne** : seul l'hôte (le créateur de la partie) lance la partie et chaque nouvelle manche.
 
 ### Installation
 
@@ -134,7 +145,30 @@ cd backend
 python -m uvicorn app.main:app --reload
 ```
 
-Puis ouvrez `http://127.0.0.1:8000` dans votre navigateur : créez un compte, créez une partie en indiquant les noms des 2 à 6 joueurs qui vont se partager l'appareil, et jouez en suivant les instructions à l'écran (l'interface indique à qui de jouer et demande de faire circuler l'appareil au bon moment).
+Puis ouvrez `http://127.0.0.1:8000` dans votre navigateur et créez un compte :
+- **Sur un seul appareil** : créez une partie en indiquant les noms des 2 à 6 joueurs, puis suivez les instructions à l'écran.
+- **En ligne** : cliquez sur « Créer une partie en ligne ». Pour tester seul sur votre ordinateur, ouvrez une deuxième fenêtre en navigation privée (ou un autre navigateur), créez un second compte, et rejoignez la partie avec son code.
+
+### Mettre le jeu en ligne (gratuit : Render + Neon)
+
+Le jeu tourne sur **Render** (serveur web gratuit) avec une base de données **Neon** (Postgres gratuit) pour conserver les comptes et l'historique. Tout est déjà configuré dans `render.yaml` : il n'y a aucun code à modifier.
+
+1. **Base de données (Neon)**
+   - Créer un compte gratuit sur [neon.tech](https://neon.tech).
+   - Créer un projet en choisissant une région en Europe (Frankfurt).
+   - Copier la *connection string* (elle commence par `postgresql://`).
+2. **Serveur (Render)**
+   - Créer un compte gratuit sur [render.com](https://render.com) en se connectant avec GitHub.
+   - Cliquer sur **New → Blueprint**, puis choisir le dépôt `GABO` : Render lit automatiquement `render.yaml`.
+   - Coller la connection string Neon dans le champ `DATABASE_URL`, puis valider.
+   - Attendre la fin du déploiement (quelques minutes) : Render affiche l'adresse du jeu, du type `https://gabo-xxxx.onrender.com`.
+3. **Jouer** : partager cette adresse avec ses amis. Chacun crée son compte, puis l'un crée une partie en ligne et partage son code ou son lien.
+
+Chaque mise à jour fusionnée dans la branche `main` est redéployée automatiquement.
+
+**Limites de l'offre gratuite** :
+- Après 15 minutes sans activité, le serveur se met en veille ; la première visite suivante prend environ une minute le temps qu'il redémarre. Tant qu'une page de partie est ouverte, le jeu le garde éveillé.
+- Les parties en cours sont gardées en mémoire : un redémarrage du serveur (mise en veille, nouveau déploiement) interrompt la partie en cours. Les comptes et l'historique, eux, sont conservés dans Neon.
 
 ### Lancer les tests
 
