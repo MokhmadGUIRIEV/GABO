@@ -34,6 +34,9 @@ const Api = {
   getRoom: (code) => apiRequest(`/api/rooms/${encodeURIComponent(code)}`),
   history: () => apiRequest("/api/rooms/history/mine"),
   leaderboard: () => apiRequest("/api/rooms/leaderboard"),
+  deleteMyAccount: (password) => apiRequest("/api/auth/me", { method: "DELETE", body: { password } }),
+  adminUsers: () => apiRequest("/api/admin/users"),
+  adminDeleteUser: (id) => apiRequest(`/api/admin/users/${encodeURIComponent(id)}`, { method: "DELETE" }),
 };
 
 function wsUrl(path) {

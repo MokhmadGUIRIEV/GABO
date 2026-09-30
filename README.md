@@ -116,6 +116,8 @@ Le moteur de jeu (`engine.py`) ne connaît rien du transport (HTTP/WebSocket) : 
 
 **Historique et classement** : une partie en ligne terminée apparaît dans l'historique de tous ceux qui l'ont jouée. Le classement du lobby compte les victoires de chaque joueur en partie en ligne (à égalité de victoires, celui qui a joué le moins de parties passe devant). Les parties sur un seul appareil n'y comptent pas, puisque leurs joueurs sont de simples noms et non des comptes.
 
+**Comptes et administration** : chacun peut supprimer son compte depuis le lobby (« Mon compte », mot de passe demandé). Ses résultats restent visibles sous son pseudo dans l'historique des autres, mais il disparaît du classement. Les comptes dont l'email figure dans la variable d'environnement `GABO_ADMIN_EMAILS` (plusieurs emails séparés par des virgules) ont accès à une page « Administration » pour voir tous les comptes et en supprimer. Ce rôle est vérifié par le serveur à chaque action.
+
 **Sécurité du mode en ligne** : chaque connexion WebSocket est liée au siège du compte connecté. Le serveur ignore complètement l'identité que le navigateur prétend avoir : un joueur ne peut ni jouer à la place d'un autre, ni demander à voir ses cartes, ni lancer une manche s'il n'est pas l'hôte. Les pseudos des autres joueurs sont systématiquement échappés avant affichage.
 
 ### Choix d'implémentation et hypothèses
@@ -161,6 +163,7 @@ Le jeu tourne sur **Render** (serveur web gratuit) avec une base de données **N
    - Créer un compte gratuit sur [render.com](https://render.com) en se connectant avec GitHub.
    - Cliquer sur **New → Blueprint**, puis choisir le dépôt `GABO` : Render lit automatiquement `render.yaml`.
    - Coller la connection string Neon dans le champ `DATABASE_URL`, puis valider.
+   - Pour avoir accès à l'administration : dans le service `gabo`, onglet **Environment**, ajouter `GABO_ADMIN_EMAILS` avec l'email de son compte.
    - Attendre la fin du déploiement (quelques minutes) : Render affiche l'adresse du jeu, du type `https://gabo-xxxx.onrender.com`.
 3. **Jouer** : partager cette adresse avec ses amis. Chacun crée son compte, puis l'un crée une partie en ligne et partage son code ou son lien.
 

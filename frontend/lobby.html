@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GABO — Lobby</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=5" />
+  <link rel="stylesheet" href="/static/css/style.css?v=6" />
 </head>
 <body>
   <div class="wrap">
@@ -12,6 +12,7 @@
       <h1 class="brand" style="margin:0;">GABO</h1>
       <div class="row">
         <span class="hint" id="welcome"></span>
+        <a class="link" id="admin-link" href="/admin.html" style="display:none;">Administration</a>
         <button class="secondary" id="logout-btn">Déconnexion</button>
       </div>
     </div>
@@ -63,9 +64,28 @@
       <h2>Historique de mes parties</h2>
       <div id="history-container" class="hint">Chargement...</div>
     </div>
+
+    <div class="panel">
+      <h2>Mon compte</h2>
+      <p class="hint">
+        Supprimer ton compte est définitif. Tes résultats restent visibles (sous ton pseudo) dans
+        l'historique des parties jouées avec d'autres, mais tu disparais du classement.
+      </p>
+      <div class="row">
+        <input type="password" id="delete-password" placeholder="Ton mot de passe" autocomplete="current-password"
+               style="max-width:240px;" />
+        <button class="danger" id="delete-account-btn">Supprimer mon compte</button>
+      </div>
+      <div class="row" id="delete-confirm-row" style="display:none; margin-top:10px;">
+        <span>Es-tu sûr ? Cette action est irréversible.</span>
+        <button class="danger" id="delete-confirm-btn">Oui, supprimer définitivement</button>
+        <button class="secondary" id="delete-cancel-btn">Annuler</button>
+      </div>
+      <div class="error-msg" id="delete-error"></div>
+    </div>
   </div>
 
-  <script src="/static/js/api.js?v=5"></script>
+  <script src="/static/js/api.js?v=6"></script>
   <script>
     let user = null;
 
@@ -233,10 +253,36 @@
       }
     }
 
+    // Two-step, inline confirmation (no popup) before deleting the account.
+    const confirmRow = document.getElementById("delete-confirm-row");
+    document.getElementById("delete-account-btn").addEventListener("click", () => {
+      const errorEl = document.getElementById("delete-error");
+      errorEl.textContent = "";
+      if (!document.getElementById("delete-password").value) {
+        errorEl.textContent = "Entre ton mot de passe pour confirmer.";
+        return;
+      }
+      confirmRow.style.display = "";
+    });
+    document.getElementById("delete-cancel-btn").addEventListener("click", () => {
+      confirmRow.style.display = "none";
+    });
+    document.getElementById("delete-confirm-btn").addEventListener("click", async () => {
+      const errorEl = document.getElementById("delete-error");
+      try {
+        await Api.deleteMyAccount(document.getElementById("delete-password").value);
+        window.location.href = "/index.html";
+      } catch (e) {
+        confirmRow.style.display = "none";
+        errorEl.textContent = e.message;
+      }
+    });
+
     (async () => {
       try {
         user = await Api.me();
         document.getElementById("welcome").textContent = `Connecté en tant que ${user.display_name}`;
+        if (user.is_admin) document.getElementById("admin-link").style.display = "";
         loadLeaderboard();
         loadHistory();
       } catch (e) {

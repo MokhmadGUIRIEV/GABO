@@ -21,9 +21,24 @@ class UserOut(BaseModel):
     id: int
     email: str
     display_name: str
+    is_admin: bool = False
 
     class Config:
         from_attributes = True
+
+
+class DeleteAccountRequest(BaseModel):
+    password: str
+
+
+class AdminUserOut(BaseModel):
+    id: int
+    email: str
+    display_name: str
+    created_at: datetime.datetime
+    games_played: int
+    wins: int
+    is_admin: bool
 
 
 class RoomCreateRequest(BaseModel):
