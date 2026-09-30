@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GABO — Lobby</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=4" />
+  <link rel="stylesheet" href="/static/css/style.css?v=5" />
 </head>
 <body>
   <div class="wrap">
@@ -54,12 +54,18 @@
     </div>
 
     <div class="panel">
+      <h2>Classement</h2>
+      <p class="hint">Nombre de victoires en parties en ligne. À égalité, le joueur ayant joué le moins de parties passe devant.</p>
+      <div id="leaderboard-container" class="hint">Chargement...</div>
+    </div>
+
+    <div class="panel">
       <h2>Historique de mes parties</h2>
       <div id="history-container" class="hint">Chargement...</div>
     </div>
   </div>
 
-  <script src="/static/js/api.js?v=4"></script>
+  <script src="/static/js/api.js?v=5"></script>
   <script>
     let user = null;
 
@@ -170,7 +176,7 @@
         table.className = "history-table";
         table.innerHTML = `
           <thead>
-            <tr><th>Date</th><th>Salle</th><th>Manches</th><th>Statut</th><th>Résultats</th></tr>
+            <tr><th>Date</th><th>Salle</th><th>Mode</th><th>Manches</th><th>Statut</th><th>Résultats</th></tr>
           </thead>
           <tbody></tbody>
         `;
@@ -185,6 +191,7 @@
           tr.innerHTML = `
             <td>${formatDate(g.started_at)}</td>
             <td>${esc(g.room_code)}</td>
+            <td>${g.mode === "online" ? "En ligne" : "Un appareil"}</td>
             <td>${g.rounds_played}</td>
             <td>${g.finished ? "Terminée" : "En cours"}</td>
             <td>${results || "-"}</td>
@@ -198,10 +205,39 @@
       }
     }
 
+    async function loadLeaderboard() {
+      const container = document.getElementById("leaderboard-container");
+      try {
+        const entries = await Api.leaderboard();
+        if (entries.length === 0) {
+          container.textContent = "Aucune partie en ligne terminée pour l'instant.";
+          return;
+        }
+        const medals = { 1: "🥇", 2: "🥈", 3: "🥉" };
+        const rows = entries
+          .map((e) => `
+            <tr class="${e.is_you ? "is-you" : ""}">
+              <td>${medals[e.rank] || e.rank}</td>
+              <td>${esc(e.display_name)}${e.is_you ? " (toi)" : ""}</td>
+              <td>${e.wins}</td>
+              <td>${e.games_played}</td>
+            </tr>`)
+          .join("");
+        container.innerHTML = `
+          <table class="history-table">
+            <thead><tr><th>Rang</th><th>Joueur</th><th>Victoires</th><th>Parties jouées</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>`;
+      } catch (e) {
+        container.textContent = "Impossible de charger le classement.";
+      }
+    }
+
     (async () => {
       try {
         user = await Api.me();
         document.getElementById("welcome").textContent = `Connecté en tant que ${user.display_name}`;
+        loadLeaderboard();
         loadHistory();
       } catch (e) {
         window.location.href = "/index.html";

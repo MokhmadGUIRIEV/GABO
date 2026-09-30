@@ -114,6 +114,8 @@ Le moteur de jeu (`engine.py`) ne connaît rien du transport (HTTP/WebSocket) : 
 - **Sur un seul appareil ("pass & play")** : le créateur saisit les noms de 2 à 6 joueurs qui se partagent l'appareil. L'interface indique à qui de jouer et demande de faire circuler l'appareil au bon moment.
 - **En ligne** : chacun joue depuis son propre appareil, avec son propre compte. L'hôte crée la partie et partage le code (ou le lien) ; ses amis rejoignent depuis le lobby, puis l'hôte lance la partie dès que 2 à 6 joueurs sont présents. Chaque joueur se voit en bas de la table et ne voit que ce qu'il a le droit de voir.
 
+**Historique et classement** : une partie en ligne terminée apparaît dans l'historique de tous ceux qui l'ont jouée. Le classement du lobby compte les victoires de chaque joueur en partie en ligne (à égalité de victoires, celui qui a joué le moins de parties passe devant). Les parties sur un seul appareil n'y comptent pas, puisque leurs joueurs sont de simples noms et non des comptes.
+
 **Sécurité du mode en ligne** : chaque connexion WebSocket est liée au siège du compte connecté. Le serveur ignore complètement l'identité que le navigateur prétend avoir : un joueur ne peut ni jouer à la place d'un autre, ni demander à voir ses cartes, ni lancer une manche s'il n'est pas l'hôte. Les pseudos des autres joueurs sont systématiquement échappés avant affichage.
 
 ### Choix d'implémentation et hypothèses

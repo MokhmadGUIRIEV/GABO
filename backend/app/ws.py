@@ -33,6 +33,7 @@ def _persist_game_over(room: RoomSession) -> None:
         for player in room.engine.players:
             db.add(PlayerResult(
                 game_id=record.id,
+                user_id=room.seat_user_ids.get(player.id),
                 player_name=player.name,
                 final_score=player.score,
                 is_winner=(player.id == room.engine.winner_id),

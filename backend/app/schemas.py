@@ -51,6 +51,14 @@ class PlayerResultOut(BaseModel):
         from_attributes = True
 
 
+class LeaderboardEntryOut(BaseModel):
+    rank: int
+    display_name: str
+    wins: int
+    games_played: int
+    is_you: bool
+
+
 class GameRecordOut(BaseModel):
     id: int
     room_code: str

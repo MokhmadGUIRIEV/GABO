@@ -41,6 +41,9 @@ class PlayerResult(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     game_id: Mapped[int] = mapped_column(ForeignKey("game_records.id"))
+    # Set for online games (each seat is an account); None for local seats,
+    # which are just names typed in by the device owner.
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     player_name: Mapped[str] = mapped_column(String(100))
     final_score: Mapped[int] = mapped_column(Integer, default=0)
     is_winner: Mapped[bool] = mapped_column(Boolean, default=False)

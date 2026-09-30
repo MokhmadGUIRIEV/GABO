@@ -159,3 +159,81 @@ def test_local_rooms_still_work_as_before(clients):
         # Local mode trusts the (single) controlling browser's player_id.
         reply = call(ws, "peek_initial", player_id="p1", indices=[0, 1])
         assert reply["state"]["players_peeked"] == ["p1"]
+
+
+def finish_online_game(host, friend, winner: str) -> str:
+    """Play a 2-player online game to game over; `winner` is "host" or "friend"."""
+    from app.game.cards import Card, Rank, Suit
+
+    code = create_online_room(host, friend)
+    with host.websocket_connect(f"/ws/rooms/{code}") as ws_host, \
+            friend.websocket_connect(f"/ws/rooms/{code}") as ws_friend:
+        ws_host.receive_json()
+        ws_friend.receive_json()
+        call(ws_host, "start_round")
+        call(ws_host, "peek_initial", indices=[0, 1])
+        call(ws_friend, "peek_initial", indices=[0, 1])
+
+        # Rig the table: whoever's turn it is calls GABO with a losing hand
+        # while already at 70 points, so they get eliminated (+35).
+        engine = room_manager.get(code).engine
+        caller = engine.current_player
+        other = next(p for p in engine.players if p.id != caller.id)
+        caller.score = 70
+        caller.hand = [Card(Rank.KING, Suit.HEART)]
+        other.hand = [Card(Rank.ACE, Suit.HEART)]
+        loser_seat = caller.id
+        winner_seat = "p0" if winner == "host" else "p1"
+        if loser_seat == winner_seat:
+            # Swap roles so the requested player wins.
+            caller.score, other.score = 0, 0
+            caller.hand, other.hand = [Card(Rank.ACE, Suit.HEART)], [Card(Rank.KING, Suit.HEART)]
+            other.score = 90
+
+        caller_ws = ws_host if caller.id == "p0" else ws_friend
+        reply = call(caller_ws, "call_gabo")
+        assert reply["state"]["phase"] == "game_over"
+        assert reply["state"]["winner_id"] == winner_seat
+    return code
+
+
+def test_online_game_history_is_visible_to_every_player(clients):
+    host, friend, stranger = clients
+    code = finish_online_game(host, friend, winner="friend")
+
+    for client in (host, friend):
+        games = client.get("/api/rooms/history/mine").json()
+        assert [g["room_code"] for g in games].count(code) == 1
+        game = next(g for g in games if g["room_code"] == code)
+        assert game["finished"] is True
+        assert {r["player_name"] for r in game["results"]} == {"Hote", "Ami"}
+
+    # Someone who did not play does not see it.
+    assert code not in [g["room_code"] for g in stranger.get("/api/rooms/history/mine").json()]
+
+
+def test_leaderboard_ranks_players_by_wins(clients):
+    host, friend, stranger = clients
+    finish_online_game(host, friend, winner="friend")
+    finish_online_game(host, friend, winner="friend")
+    finish_online_game(host, friend, winner="host")
+
+    # Other tests reuse the same display names: identify rows via is_you.
+    friend_row = next(e for e in friend.get("/api/rooms/leaderboard").json() if e["is_you"])
+    board = host.get("/api/rooms/leaderboard").json()
+    host_row = next(e for e in board if e["is_you"])
+    assert friend_row["wins"] == 2 and friend_row["games_played"] == 3
+    assert host_row["wins"] == 1 and host_row["games_played"] == 3
+    assert friend_row["rank"] < host_row["rank"]
+    # Ranks follow wins in order.
+    assert [e["wins"] for e in board] == sorted((e["wins"] for e in board), reverse=True)
+    # Nobody who never finished an online game shows up.
+    assert "Inconnu" not in [e["display_name"] for e in board]
+
+
+def test_local_games_do_not_count_in_leaderboard(clients):
+    host, _, _ = clients
+    room = host.post("/api/rooms", json={"player_names": ["Alice", "Bob"]}).json()
+    before = host.get("/api/rooms/leaderboard").json()
+    assert room["mode"] == "local"
+    assert all(e["display_name"] not in ("Alice", "Bob") for e in before)

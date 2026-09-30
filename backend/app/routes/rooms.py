@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import get_current_user
 from ..game.engine import GameError
-from ..models import GameRecord, User
+from ..models import GameRecord, PlayerResult, User
 from ..rooms import MAX_PLAYERS, MIN_PLAYERS, RoomSession, room_manager
-from ..schemas import GameRecordOut, RoomCreateRequest, RoomOut
+from ..schemas import GameRecordOut, LeaderboardEntryOut, RoomCreateRequest, RoomOut
 
 router = APIRouter(prefix="/api/rooms", tags=["rooms"])
 
@@ -47,13 +48,40 @@ def create_room(payload: RoomCreateRequest, user: User = Depends(get_current_use
 
 @router.get("/history/mine", response_model=list[GameRecordOut])
 def my_history(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Games I created, plus online games I played in (created by someone else).
+    played_in = select(PlayerResult.game_id).where(PlayerResult.user_id == user.id)
     records = (
         db.query(GameRecord)
-        .filter(GameRecord.created_by_user_id == user.id)
+        .filter(or_(GameRecord.created_by_user_id == user.id, GameRecord.id.in_(played_in)))
         .order_by(GameRecord.started_at.desc())
         .all()
     )
     return records
+
+
+@router.get("/leaderboard", response_model=list[LeaderboardEntryOut])
+def leaderboard(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Only results tied to an account count, i.e. finished online games:
+    # local seats are just names typed in on one device.
+    wins = func.sum(case((PlayerResult.is_winner, 1), else_=0))
+    rows = (
+        db.query(User.id, User.display_name, wins.label("wins"), func.count(PlayerResult.id).label("played"))
+        .join(PlayerResult, PlayerResult.user_id == User.id)
+        .group_by(User.id, User.display_name)
+        .all()
+    )
+    # Most wins first; on equal wins, fewer games played (better ratio) first.
+    rows.sort(key=lambda r: (-(r.wins or 0), r.played, r.display_name.lower()))
+    entries = []
+    for i, r in enumerate(rows):
+        wins_count = int(r.wins or 0)
+        # Players with the same number of wins share the same rank (1, 1, 3...).
+        rank = entries[-1].rank if entries and entries[-1].wins == wins_count else i + 1
+        entries.append(LeaderboardEntryOut(
+            rank=rank, display_name=r.display_name, wins=wins_count,
+            games_played=r.played, is_you=(r.id == user.id),
+        ))
+    return entries
 
 
 @router.get("/{code}", response_model=RoomOut)

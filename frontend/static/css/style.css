@@ -267,3 +267,4 @@ table.summary th, table.summary td { text-align: left; padding: 6px 8px; border-
 
 .waiting-list { margin: 6px 0 14px; padding-left: 20px; }
 .waiting-list li { padding: 3px 0; }
+.history-table tr.is-you td { color: var(--accent); font-weight: 600; }

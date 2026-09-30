@@ -33,6 +33,7 @@ const Api = {
   joinRoom: (code) => apiRequest(`/api/rooms/${encodeURIComponent(code)}/join`, { method: "POST" }),
   getRoom: (code) => apiRequest(`/api/rooms/${encodeURIComponent(code)}`),
   history: () => apiRequest("/api/rooms/history/mine"),
+  leaderboard: () => apiRequest("/api/rooms/leaderboard"),
 };
 
 function wsUrl(path) {

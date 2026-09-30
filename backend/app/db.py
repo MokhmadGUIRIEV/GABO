@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 def _database_url() -> str:
@@ -44,3 +44,13 @@ def init_db() -> None:
     from . import models  # noqa: F401  (ensure models are registered on Base)
 
     Base.metadata.create_all(bind=engine)
+    _add_missing_columns()
+
+
+def _add_missing_columns() -> None:
+    # create_all() never alters existing tables: databases created before a
+    # column was added need it added by hand, or every query would fail.
+    columns = {c["name"] for c in inspect(engine).get_columns("player_results")}
+    if "user_id" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE player_results ADD COLUMN user_id INTEGER REFERENCES users(id)"))
