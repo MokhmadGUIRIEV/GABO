@@ -138,9 +138,11 @@ function playerName(id) {
 function cardFace(card, extraClass = "") {
   if (!card) return `<div class="card empty ${extraClass}"></div>`;
   const isRed = RED_SUITS.has(card.suit);
+  // Rank big and centered, suit small underneath: stays readable even on
+  // the tiny cards around the table on a phone.
   return `<div class="card ${isRed ? "red" : ""} ${extraClass}">
-    <div>${RANK_LABELS[card.rank] || card.rank}</div>
-    <div class="suit">${SUIT_SYMBOLS[card.suit] || ""}</div>
+    <span class="rank">${RANK_LABELS[card.rank] || card.rank}</span>
+    <span class="suit">${SUIT_SYMBOLS[card.suit] || ""}</span>
   </div>`;
 }
 
@@ -201,6 +203,18 @@ function render() {
   renderSeats(s);
   renderPhasePanel(s);
   renderGlobalActions(s);
+  notifyMyTurn(s);
+}
+
+// Online: when it becomes this player's turn, buzz the phone and flag the
+// browser tab, so nobody has to stare at the screen while others play.
+const BASE_TITLE = document.title;
+let wasMyTurn = false;
+function notifyMyTurn(s) {
+  const myTurn = ONLINE && s.phase === "turn" && s.current_player_id === myId;
+  if (myTurn && !wasMyTurn && navigator.vibrate) navigator.vibrate([120, 60, 120]);
+  document.title = myTurn ? `(À toi !) ${BASE_TITLE}` : BASE_TITLE;
+  wasMyTurn = myTurn;
 }
 
 // Fixed seating around the table, per player count. Seat 0 is always at the
@@ -226,20 +240,36 @@ const SEAT_LAYOUTS = {
   ],
   5: [
     { top: 90, left: 50, rotate: 0 },
-    { top: 62, left: 8, rotate: 0 },
-    { top: 15, left: 24, rotate: 0 },
-    { top: 15, left: 76, rotate: 0 },
-    { top: 62, left: 92, rotate: 0 },
+    { top: 70, left: 10, rotate: 0 },
+    { top: 18, left: 24, rotate: 0 },
+    { top: 18, left: 76, rotate: 0 },
+    { top: 70, left: 90, rotate: 0 },
   ],
   6: [
     { top: 90, left: 50, rotate: 0 },
-    { top: 68, left: 6, rotate: 0 },
-    { top: 24, left: 6, rotate: 0 },
+    { top: 72, left: 10, rotate: 0 },
+    { top: 28, left: 10, rotate: 0 },
     { top: 8, left: 50, rotate: 180 },
-    { top: 24, left: 94, rotate: 0 },
-    { top: 68, left: 94, rotate: 0 },
+    { top: 28, left: 90, rotate: 0 },
+    { top: 72, left: 90, rotate: 0 },
   ],
 };
+
+// Phones: the center piles take almost the whole width of the table, so
+// seats at mid-height would cover them. Move those up on narrow screens.
+const NARROW_SEAT_LAYOUTS = {
+  4: [
+    { top: 88, left: 50, rotate: 0 },
+    { top: 28, left: 12, rotate: 0 },
+    { top: 12, left: 50, rotate: 180 },
+    { top: 28, left: 88, rotate: 0 },
+  ],
+};
+
+function seatLayout(n) {
+  const narrow = window.matchMedia("(max-width: 560px)").matches;
+  return (narrow && NARROW_SEAT_LAYOUTS[n]) || SEAT_LAYOUTS[n] || SEAT_LAYOUTS[6];
+}
 
 // What clicking a given seat's cards currently does, if anything. Returns a
 // mode string or null. See `dispatchSeatAction` for what each mode triggers.
@@ -293,7 +323,7 @@ function renderHandSlot(mode, playerId, idx, slot, chosen) {
 
 function renderSeats(s) {
   const n = s.players.length;
-  const layout = SEAT_LAYOUTS[n] || SEAT_LAYOUTS[6];
+  const layout = seatLayout(n);
   // Online, rotate the table so this player always sits at the bottom.
   const myIdx = ONLINE ? Math.max(0, s.players.findIndex((p) => p.id === myId)) : 0;
   const html = s.players
@@ -316,6 +346,7 @@ function renderSeats(s) {
       if (isSelecting) classes.push("selecting");
       if (isRevealing) classes.push("revealing");
       if (mode) classes.push("interactive");
+      if (ONLINE && p.id === myId) classes.push("me");
 
       const hand = p.hand
         .map((slot, idx) => {
@@ -339,6 +370,7 @@ function renderSeats(s) {
     })
     .join("");
   document.getElementById("seats-container").innerHTML = html;
+  keepSeatsOnScreen();
 
   document.querySelectorAll(".seat-action-slot").forEach((btn) => {
     btn.onclick = () => {
@@ -346,6 +378,28 @@ function renderSeats(s) {
     };
   });
 }
+
+// On a narrow phone, the hands of the side seats can stick out of the
+// screen: nudge those seats back inside (a few pixels of margin).
+function keepSeatsOnScreen() {
+  const margin = 4;
+  const screenWidth = document.documentElement.clientWidth;
+  document.querySelectorAll("#seats-container .seat").forEach((seat) => {
+    const rect = seat.querySelector(".hand-row").getBoundingClientRect();
+    const header = seat.querySelector(".seat-header").getBoundingClientRect();
+    const left = Math.min(rect.left, header.left);
+    const right = Math.max(rect.right, header.right);
+    let shift = 0;
+    if (left < margin) shift = margin - left;
+    else if (right > screenWidth - margin) shift = screenWidth - margin - right;
+    if (shift) seat.style.marginLeft = `${shift}px`;
+  });
+}
+
+// Phone turned sideways: seats need re-placing.
+window.addEventListener("resize", () => {
+  if (publicState) renderSeats(publicState);
+});
 
 function dispatchSeatAction(mode, playerId, idx) {
   const s = publicState;
@@ -931,6 +985,22 @@ function showFatal(message) {
     `<p class="hint">${esc(message)}</p><a class="link" href="/lobby.html">Retour au lobby</a>`;
 }
 
+// Keep the phone screen on during a game (it would otherwise lock and drop
+// the connection). Silently skipped by browsers that don't support it.
+let wakeLock = null;
+async function keepScreenAwake() {
+  if (!("wakeLock" in navigator)) return;
+  try {
+    wakeLock = await navigator.wakeLock.request("screen");
+  } catch (e) {
+    wakeLock = null;
+  }
+}
+document.addEventListener("visibilitychange", () => {
+  // The lock is released automatically when the page is hidden.
+  if (document.visibilityState === "visible") keepScreenAwake();
+});
+
 (async () => {
   try {
     currentUser = await Api.me();
@@ -960,6 +1030,7 @@ function showFatal(message) {
     myId = roomInfo.you;
   }
   connectWs();
+  keepScreenAwake();
   // Free hosting puts the server to sleep after a while without HTTP
   // traffic (which would wipe in-memory games): keep it awake while a game
   // page is open, and keep the WebSocket from being closed as idle.

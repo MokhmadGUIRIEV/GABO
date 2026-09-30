@@ -14,7 +14,11 @@ async function apiRequest(path, { method = "GET", body } = {}) {
     data = null;
   }
   if (!res.ok) {
-    const message = (data && data.detail) || `Erreur ${res.status}`;
+    const detail = data && data.detail;
+    // Form validation errors (422) come back as a list of field errors.
+    const message = Array.isArray(detail)
+      ? "Informations invalides : vérifie les champs du formulaire."
+      : detail || `Erreur ${res.status}`;
     throw new Error(message);
   }
   return data;
@@ -35,6 +39,9 @@ const Api = {
   history: () => apiRequest("/api/rooms/history/mine"),
   leaderboard: () => apiRequest("/api/rooms/leaderboard"),
   deleteMyAccount: (password) => apiRequest("/api/auth/me", { method: "DELETE", body: { password } }),
+  updateProfile: (display_name) => apiRequest("/api/auth/me", { method: "PATCH", body: { display_name } }),
+  changePassword: (current_password, new_password) =>
+    apiRequest("/api/auth/password", { method: "POST", body: { current_password, new_password } }),
   adminUsers: () => apiRequest("/api/admin/users"),
   adminDeleteUser: (id) => apiRequest(`/api/admin/users/${encodeURIComponent(id)}`, { method: "DELETE" }),
 };

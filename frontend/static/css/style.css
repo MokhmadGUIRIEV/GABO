@@ -14,6 +14,9 @@
 
 * { box-sizing: border-box; }
 
+/* No double-tap zoom / 300ms delay on phones for anything clickable. */
+button, a, input, .card-btn { touch-action: manipulation; }
+
 body {
   margin: 0;
   font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -77,9 +80,59 @@ button:active:not(:disabled) { transform: scale(0.97); }
 button:disabled { opacity: 0.4; cursor: not-allowed; }
 button.secondary { background: transparent; border: 1px solid var(--accent); color: var(--accent); }
 button.danger { background: var(--danger); color: white; }
+button.small { padding: 6px 12px; font-size: 0.85rem; }
+input:disabled { opacity: 0.6; }
 
 .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .error-msg { color: #ff9d8a; min-height: 1.2em; margin-top: 8px; }
+.error-msg:empty, .success-msg:empty { min-height: 0; }
+.success-msg { color: #8fe0a8; margin-top: 8px; }
+.warn-text { color: #ff9d8a; font-weight: 600; }
+.panel.danger-zone { border-color: rgba(192, 57, 43, 0.55); }
+.panel h2 { margin-top: 0; }
+
+/* --- Site navigation (every page except login and the game table) --- */
+
+.site-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px 18px;
+  flex-wrap: wrap;
+  padding: 10px 20px;
+  background: rgba(6, 20, 15, 0.55);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.brand-link {
+  font-family: "Georgia", serif;
+  font-size: 1.6rem;
+  font-weight: bold;
+  color: var(--accent);
+  text-decoration: none;
+  text-shadow: 0 2px 6px rgba(0,0,0,0.4);
+}
+.nav-links { display: flex; gap: 4px; flex-wrap: wrap; flex: 1; }
+.nav-links a {
+  color: var(--text);
+  text-decoration: none;
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 0.95rem;
+}
+.nav-links a:hover { background: rgba(255,255,255,0.07); }
+.nav-links a.active { background: var(--accent); color: #2a1e00; font-weight: 600; }
+.nav-user { display: flex; align-items: center; gap: 10px; }
+
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.table-scroll .history-table { min-width: 480px; }
+
+@media (max-width: 700px) {
+  .site-nav { padding: 8px 12px; }
+  .brand-link { font-size: 1.35rem; }
+  .nav-user { margin-left: auto; }
+  /* Links on their own full-width row, each tab taking equal space. */
+  .nav-links { order: 3; flex-basis: 100%; gap: 4px; }
+  .nav-links a { flex: 1; text-align: center; padding: 8px 4px; font-size: 0.85rem; background: rgba(255,255,255,0.05); }
+}
 .hint { color: var(--text-dim); font-size: 0.85rem; }
 
 .player-name-input { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
@@ -179,7 +232,8 @@ a.link { color: var(--accent); }
   flex-wrap: nowrap;
   justify-content: center;
 }
-.seat .card, .seat .card.back { width: 30px; height: 44px; font-size: 0.68rem; flex: 0 0 auto; }
+.seat .card, .seat .card.back { width: 30px; height: 44px; font-size: 0.8rem; flex: 0 0 auto; }
+.seat.me .card, .seat.me .card.back { width: 40px; height: 58px; font-size: 1rem; }
 .seat .hand-slot .slot-index { display: none; }
 
 .seat-action-slot {
@@ -198,13 +252,6 @@ a.link { color: var(--accent); }
   transform: translateY(-4px);
 }
 
-@media (max-width: 560px) {
-  .table-surface { max-width: 100%; }
-  .seat { width: 130px; }
-  .seat .hand-row { gap: 3px; }
-  .seat .card, .seat .card.back { width: 24px; height: 36px; font-size: 0.55rem; }
-  .center-piles { gap: 12px; }
-}
 
 .pile { text-align: center; }
 .pile-label { font-size: 0.8rem; color: var(--text-dim); margin-bottom: 6px; }
@@ -224,13 +271,16 @@ a.link { color: var(--accent); }
   font-size: 1.1rem;
   box-shadow: 0 3px 6px rgba(0,0,0,0.35);
   user-select: none;
+  -webkit-user-select: none;
 }
 .card.back {
   background: repeating-linear-gradient(45deg, #1c4f3c, #1c4f3c 6px, #276048 6px, #276048 12px);
   color: transparent;
   border-color: var(--accent-dark);
 }
-.card .suit { font-size: 1.4rem; margin-top: 2px; }
+/* Rank big and centered, suit below: both scale with the card's font-size. */
+.card .rank { font-size: 1.3em; line-height: 1; }
+.card .suit { font-size: 1em; line-height: 1; margin-top: 0.1em; }
 .card.red { color: #a6222c; }
 .card.empty { visibility: hidden; }
 
@@ -261,8 +311,41 @@ table.summary th, table.summary td { text-align: left; padding: 6px 8px; border-
 
 .top-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 
+/* --- Phones --- */
 @media (max-width: 600px) {
-  .card { width: 52px; height: 76px; font-size: 0.9rem; }
+  .card { width: 46px; height: 66px; font-size: 0.95rem; }
+  .pile-label { font-size: 0.7rem; margin-bottom: 4px; }
+  .center-piles { gap: 10px; }
+  .center-piles .hint { font-size: 0.75rem; }
+  .center-piles .pile-label, .center-piles .hint { white-space: nowrap; }
+}
+
+@media (max-width: 560px) {
+  .wrap.game-wrap { padding: 8px 6px 40px; }
+  .game-wrap .panel { padding: 12px 8px; }
+  .game-wrap .top-bar { margin-bottom: 6px; padding: 0 6px; }
+  .game-wrap .top-bar h1.brand { font-size: 1.6rem; }
+  .game-wrap .room-code { font-size: 1rem; letter-spacing: 2px; }
+
+  /* Taller oval table: more room between seats on a portrait screen. */
+  .table-surface { max-width: 100%; aspect-ratio: 5 / 6; border-width: 6px; }
+  .table-wrap { margin: 8px 0 34px; }
+  .seat { width: 120px; }
+  .seat-header { font-size: 0.72rem; padding: 2px 8px; margin-bottom: 4px; }
+  .seat .hand-row { gap: 3px; }
+  .seat .card, .seat .card.back { width: 26px; height: 38px; font-size: 0.72rem; border-width: 1.5px; border-radius: 5px; }
+  /* Cards you're looking at or have to pick: bigger, easy to read and tap. */
+  .seat.revealing .card, .seat.revealing .card.back,
+  .seat.interactive .card, .seat.interactive .card.back {
+    width: 32px; height: 46px; font-size: 0.85rem;
+  }
+  .seat.me .card, .seat.me .card.back { width: 50px; height: 72px; font-size: 1.15rem; border-radius: 7px; }
+  .seat.me .hand-row { gap: 6px; }
+
+  /* Game action buttons: full width, big enough for a thumb. */
+  #phase-panel button { display: block; width: 100%; margin: 8px 0; padding: 12px 10px; }
+  #phase-panel .row button { display: inline-block; width: auto; flex: 1 1 120px; margin: 0; }
+  .action-bar > button { flex: 1 1 140px; padding: 12px 10px; }
 }
 
 .waiting-list { margin: 6px 0 14px; padding-left: 20px; }

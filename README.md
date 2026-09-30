@@ -103,8 +103,13 @@ backend/
     test_online.py     -> tests du mode en ligne (rejoindre, sécurité des identités)
     test_app.py        -> tests de l'application (fichiers servis, santé)
 frontend/
-  index.html, lobby.html, game.html
-  static/css, static/js
+  index.html                       -> connexion / création de compte
+  lobby.html                       -> « Jouer » : créer ou rejoindre une partie
+  leaderboard.html, history.html   -> classement, historique de mes parties
+  account.html                     -> « Mon compte » : pseudo, mot de passe, suppression
+  admin.html                       -> administration (comptes admin uniquement)
+  game.html                        -> la table de jeu
+  static/css, static/js            -> nav.js = barre de navigation commune aux pages
 ```
 
 Le moteur de jeu (`engine.py`) ne connaît rien du transport (HTTP/WebSocket) : il expose une méthode `public_state(viewer_id)` qui ne révèle que ce que ce joueur a le droit de voir à cet instant. Le même moteur sert aux deux modes de jeu.
@@ -112,11 +117,15 @@ Le moteur de jeu (`engine.py`) ne connaît rien du transport (HTTP/WebSocket) : 
 ### Deux modes de jeu
 
 - **Sur un seul appareil ("pass & play")** : le créateur saisit les noms de 2 à 6 joueurs qui se partagent l'appareil. L'interface indique à qui de jouer et demande de faire circuler l'appareil au bon moment.
-- **En ligne** : chacun joue depuis son propre appareil, avec son propre compte. L'hôte crée la partie et partage le code (ou le lien) ; ses amis rejoignent depuis le lobby, puis l'hôte lance la partie dès que 2 à 6 joueurs sont présents. Chaque joueur se voit en bas de la table et ne voit que ce qu'il a le droit de voir.
+- **En ligne** : chacun joue depuis son propre appareil, avec son propre compte. L'hôte crée la partie et partage le code (ou le lien) ; ses amis rejoignent depuis la page « Jouer », puis l'hôte lance la partie dès que 2 à 6 joueurs sont présents. Chaque joueur se voit en bas de la table et ne voit que ce qu'il a le droit de voir.
 
-**Historique et classement** : une partie en ligne terminée apparaît dans l'historique de tous ceux qui l'ont jouée. Le classement du lobby compte les victoires de chaque joueur en partie en ligne (à égalité de victoires, celui qui a joué le moins de parties passe devant). Les parties sur un seul appareil n'y comptent pas, puisque leurs joueurs sont de simples noms et non des comptes.
+**Historique et classement** : une partie en ligne terminée apparaît dans l'historique de tous ceux qui l'ont jouée. La page « Classement » compte les victoires de chaque joueur en partie en ligne (à égalité de victoires, celui qui a joué le moins de parties passe devant). Les parties sur un seul appareil n'y comptent pas, puisque leurs joueurs sont de simples noms et non des comptes.
 
-**Comptes et administration** : chacun peut supprimer son compte depuis le lobby (« Mon compte », mot de passe demandé). Ses résultats restent visibles sous son pseudo dans l'historique des autres, mais il disparaît du classement. Les comptes dont l'email figure dans la variable d'environnement `GABO_ADMIN_EMAILS` (plusieurs emails séparés par des virgules) ont accès à une page « Administration » pour voir tous les comptes et en supprimer. Ce rôle est vérifié par le serveur à chaque action.
+**Pages du site** : une barre de navigation en haut de chaque page mène à « Jouer », « Classement », « Historique » et « Mon compte » (plus « Administration » pour les admins), chacune sur sa propre page.
+
+**Comptes et administration** : sur la page « Mon compte », chacun peut changer son pseudo (il est aussitôt mis à jour dans le classement), changer son mot de passe (l'actuel est demandé) ou supprimer son compte (mot de passe demandé, puis confirmation). Ses résultats restent visibles sous son pseudo dans l'historique des autres, mais il disparaît du classement. Les comptes dont l'email figure dans la variable d'environnement `GABO_ADMIN_EMAILS` (plusieurs emails séparés par des virgules) ont accès à une page « Administration » pour voir tous les comptes et en supprimer. Ce rôle est vérifié par le serveur à chaque action.
+
+**Sur téléphone** : la table devient ovale pour profiter de la hauteur de l'écran, ses propres cartes sont affichées en grand en bas, et la valeur de chaque carte est écrite en gros au centre. Les sièges qui dépasseraient de l'écran sont recadrés, les boutons d'action prennent toute la largeur, et l'écran reste allumé pendant la partie (si le navigateur le permet). En ligne, le téléphone vibre et l'onglet affiche « (À toi !) » quand c'est son tour.
 
 **Sécurité du mode en ligne** : chaque connexion WebSocket est liée au siège du compte connecté. Le serveur ignore complètement l'identité que le navigateur prétend avoir : un joueur ne peut ni jouer à la place d'un autre, ni demander à voir ses cartes, ni lancer une manche s'il n'est pas l'hôte. Les pseudos des autres joueurs sont systématiquement échappés avant affichage.
 
