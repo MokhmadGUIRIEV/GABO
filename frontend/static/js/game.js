@@ -45,12 +45,26 @@ let powerSwapOwnIndex = null;
 let snapArmed = false;
 let turnArmedFor = null;
 
+// What just happened on the table (server action feed, shared by everyone):
+// `slotHighlights` marks cards that just moved, with a short label saying
+// where from, for a few seconds.
+const HIGHLIGHT_MS = 5000;
+let lastSeenActionSeq = null;
+let slotHighlights = new Map(); // "playerId:index" -> {label, until}
+
+// Countdowns sent by the server as "seconds left", turned into local
+// deadlines once per received state.
+let timedState = null;
+let doublesWindowEndsAt = 0;
+let finalDoublesEndsAt = null;
+let tickTimer = null;
+
 // Online games: this browser is one fixed player (`myId`), always sees the
 // game from that player's point of view, and only ever acts as that player
 // (the server enforces it anyway). Local games keep the pass & play flow.
 let ONLINE = false;
 let myId = null;
-const SNAP_PHASES_ONLINE = new Set(["turn", "awaiting_decision", "power_pending"]);
+const SNAP_PHASES_ONLINE = new Set(["turn", "awaiting_decision", "power_pending", "final_doubles"]);
 
 function isHost() {
   return ONLINE && roomInfo && roomInfo.host_player_id === myId;
@@ -157,6 +171,8 @@ function cardBack(extraClass = "") {
 function render() {
   if (!publicState) return;
   const s = publicState;
+  syncTimers(s);
+  processNewActions(s);
 
   if (ONLINE) {
     // Online, everyone picks their 2 starting cards at the same time on
@@ -181,6 +197,7 @@ function render() {
     turn: `Tour de ${playerName(s.current_player_id)}`,
     awaiting_decision: `${playerName(s.current_player_id)} décide de sa carte piochée`,
     power_pending: `Pouvoir en cours pour ${playerName(s.pending_power_owner)}`,
+    final_doubles: "Dernière chance pour poser un doublon !",
     round_over: "Manche terminée",
     game_over: "Partie terminée",
   };
@@ -204,6 +221,112 @@ function render() {
   renderPhasePanel(s);
   renderGlobalActions(s);
   notifyMyTurn(s);
+  scheduleTick();
+}
+
+function syncTimers(s) {
+  if (s === timedState) return;
+  timedState = s;
+  const now = Date.now();
+  doublesWindowEndsAt = now + (s.doubles_window_remaining || 0) * 1000;
+  finalDoublesEndsAt = s.final_doubles_remaining == null ? null : now + s.final_doubles_remaining * 1000;
+}
+
+function secondsLeft(endsAt) {
+  return endsAt ? Math.max(0, Math.ceil((endsAt - Date.now()) / 1000)) : 0;
+}
+
+function doublesWindowOpen() {
+  return Date.now() < doublesWindowEndsAt;
+}
+
+// Re-draw while a countdown or a highlight is running, then stop.
+function scheduleTick() {
+  const now = Date.now();
+  const busy =
+    now < doublesWindowEndsAt ||
+    (finalDoublesEndsAt && now < finalDoublesEndsAt) ||
+    [...slotHighlights.values()].some((h) => h.until > now);
+  if (!busy || tickTimer) return;
+  tickTimer = setTimeout(() => {
+    tickTimer = null;
+    // Don't redraw under a running reveal: it re-renders on its own.
+    if (!revealingPlayerId) render();
+    else scheduleTick();
+  }, 250);
+}
+
+// ---------------------------------------------------------------------
+// Action feed: tells everyone what just happened, and which cards moved
+// ---------------------------------------------------------------------
+
+const RANK_NAMES = {
+  as: "As", valet: "Valet", dame: "Dame", roi: "Roi",
+};
+
+function cardText(card) {
+  if (!card) return "";
+  return `${RANK_NAMES[card.rank] || card.rank}${SUIT_SYMBOLS[card.suit] || ""}`;
+}
+
+function nth(idx) {
+  return idx === 0 ? "1re" : `${idx + 1}e`;
+}
+
+function highlight(playerId, idx, label) {
+  slotHighlights.set(`${playerId}:${idx}`, { label, until: Date.now() + HIGHLIGHT_MS });
+}
+
+function describeAction(a) {
+  const who = playerName(a.player_id);
+  const target = a.target_id ? playerName(a.target_id) : "";
+  switch (a.type) {
+    case "draw":
+      return `${who} pioche une carte.`;
+    case "discard_drawn":
+      return `${who} défausse la carte piochée : ${cardText(a.card)}.`;
+    case "swap_drawn":
+      highlight(a.player_id, a.hand_index, "⇄ Pioche");
+      return `${who} remplace sa ${nth(a.hand_index)} carte par la carte piochée (${cardText(a.discarded)} part à la défausse).`;
+    case "power_peek":
+      highlight(a.target_id, a.hand_index, `👁 ${who}`);
+      return a.target_id === a.player_id
+        ? `${who} regarde sa ${nth(a.hand_index)} carte (pouvoir du ${cardText(a.power_card)}).`
+        : `${who} regarde la ${nth(a.hand_index)} carte de ${target} (pouvoir du ${cardText(a.power_card)}).`;
+    case "power_swap":
+      highlight(a.player_id, a.own_index, `⇄ ${target}`);
+      highlight(a.target_id, a.target_index, `⇄ ${who}`);
+      return `${who} échange sa ${nth(a.own_index)} carte avec la ${nth(a.target_index)} carte de ${target} (pouvoir de la ${cardText(a.power_card)}).`;
+    case "skip_power":
+      return `${who} n'utilise pas le pouvoir du ${cardText(a.power_card)}.`;
+    case "snap":
+      if (a.success) return `${who} pose un doublon : ${cardText(a.card)} ✔`;
+      highlight(a.player_id, a.penalty_index, "Pénalité");
+      return `${who} se trompe de doublon (${cardText(a.card)}) : +1 carte de pénalité.`;
+    case "gabo":
+      return `${who} dit GABO !`;
+    default:
+      return "";
+  }
+}
+
+function processNewActions(s) {
+  const actions = s.actions || [];
+  const maxSeq = actions.length ? actions[actions.length - 1].seq : 0;
+  if (lastSeenActionSeq === null) {
+    // First load (or page reload): don't replay old moves.
+    lastSeenActionSeq = maxSeq;
+    return;
+  }
+  for (const a of actions) {
+    if (a.seq <= lastSeenActionSeq) continue;
+    const text = describeAction(a);
+    if (text) {
+      log(text);
+      document.getElementById("last-action").textContent = text;
+    }
+  }
+  lastSeenActionSeq = Math.max(lastSeenActionSeq, maxSeq);
 }
 
 // Online: when it becomes this player's turn, buzz the phone and flag the
@@ -290,7 +413,7 @@ function computeSeatMode(s, playerId) {
       if (powerSwapOwnIndex !== null && playerId !== owner) return "power-swap-target";
     }
   }
-  if (snapArmed && s.phase === "turn") return "snap";
+  if (snapArmed && (s.phase === "turn" || s.phase === "final_doubles")) return "snap";
   return null;
 }
 
@@ -314,11 +437,14 @@ function computeOnlineSeatMode(s, playerId) {
 
 function renderHandSlot(mode, playerId, idx, slot, chosen) {
   const inner = slot.hidden ? cardBack() : cardFace(slot.card);
-  const chosenClass = chosen ? "chosen" : "";
+  const hl = slotHighlights.get(`${playerId}:${idx}`);
+  const lit = hl && hl.until > Date.now();
+  const classes = [chosen ? "chosen" : "", lit ? "just-moved" : ""].join(" ");
+  const badge = lit ? `<span class="slot-badge">${esc(hl.label)}</span>` : "";
   if (mode) {
-    return `<button class="card-btn seat-action-slot ${chosenClass}" data-mode="${mode}" data-player="${esc(playerId)}" data-i="${idx}">${inner}</button>`;
+    return `<button class="card-btn seat-action-slot ${classes}" data-mode="${mode}" data-player="${esc(playerId)}" data-i="${idx}">${inner}${badge}</button>`;
   }
-  return `<span class="seat-static-slot ${chosenClass}">${inner}</span>`;
+  return `<span class="seat-static-slot ${classes}">${inner}${badge}</span>`;
 }
 
 function renderSeats(s) {
@@ -424,7 +550,7 @@ function renderGlobalActions(s) {
   const me = ONLINE ? s.players.find((p) => p.id === myId) : null;
   const snapAllowed = ONLINE
     ? SNAP_PHASES_ONLINE.has(s.phase) && me && !me.eliminated && me.hand.length > 0
-    : s.phase === "turn";
+    : s.phase === "turn" || s.phase === "final_doubles";
   if (revealingPlayerId || !snapAllowed || !s.top_discard) {
     snapArmed = false;
     return;
@@ -435,7 +561,7 @@ function renderGlobalActions(s) {
     ? ONLINE
       ? "Annuler — clique une de tes cartes"
       : "Annuler — clique une carte sur la table"
-    : "⚡ Carte identique ! (snap)";
+    : "⚡ Poser un doublon";
   btn.onclick = () => {
     snapArmed = !snapArmed;
     render();
@@ -451,6 +577,11 @@ function renderPhasePanel(s) {
     panel.innerHTML = ONLINE
       ? `<p class="hint">Mémorise bien ! (${revealRemaining}s)</p>`
       : `<p class="hint">${esc(playerName(revealingPlayerId))} mémorise sa carte... (${revealRemaining}s)</p>`;
+    return;
+  }
+
+  if (s.phase === "final_doubles") {
+    renderFinalDoublesPanel(s, panel);
     return;
   }
 
@@ -511,23 +642,7 @@ function renderPhasePanel(s) {
       return;
     }
     panel.innerHTML = `<p class="hint">Assure-toi que les autres ne regardent pas l'écran de ${esc(current.name)}.</p>`;
-    if (!s.gabo_caller_id) {
-      const gaboBtn = document.createElement("button");
-      gaboBtn.className = "danger";
-      gaboBtn.textContent = "Dire GABO !";
-      gaboBtn.onclick = () => {
-        turnArmedFor = null;
-        handleCallGabo(current.id);
-      };
-      panel.appendChild(gaboBtn);
-    }
-    const drawBtn = document.createElement("button");
-    drawBtn.textContent = "Piocher une carte";
-    drawBtn.onclick = () => {
-      turnArmedFor = null;
-      handleDraw(current.id);
-    };
-    panel.appendChild(drawBtn);
+    renderTurnButtons(s, panel, current.id, () => (turnArmedFor = null));
     return;
   }
 
@@ -554,7 +669,7 @@ function renderPhasePanel(s) {
     panel.innerHTML = `<p class="hint">${hint}</p>`;
     const skipBtn = document.createElement("button");
     skipBtn.className = "secondary";
-    skipBtn.textContent = "Ne pas utiliser le pouvoir";
+    skipBtn.textContent = "Passer (ne pas utiliser le pouvoir)";
     skipBtn.onclick = () => handleSkipPower(owner);
     panel.appendChild(skipBtn);
     return;
@@ -580,6 +695,35 @@ const POWER_LABELS = {
   peek_opponent: "9/10 : regarder une carte adverse",
   swap_and_peek: "Valet/Dame : échanger une carte",
 };
+
+// GABO / Piocher, locked for a few seconds after each discard so everyone
+// has time to drop a doublon first.
+function renderTurnButtons(s, panel, playerId, beforeAction = () => {}) {
+  const wait = doublesWindowOpen() ? secondsLeft(doublesWindowEndsAt) : 0;
+  if (wait) {
+    panel.insertAdjacentHTML("beforeend", `<p class="hint">⏳ ${wait} s pour que chacun puisse poser un doublon…</p>`);
+  }
+  if (!s.gabo_caller_id) {
+    const gabo = addButton(panel, "Dire GABO !", () => {
+      beforeAction();
+      handleCallGabo(playerId);
+    }, "danger");
+    gabo.disabled = Boolean(wait);
+  }
+  const draw = addButton(panel, wait ? `Piocher (${wait} s)` : "Piocher une carte", () => {
+    beforeAction();
+    handleDraw(playerId);
+  });
+  draw.disabled = Boolean(wait);
+}
+
+function renderFinalDoublesPanel(s, panel) {
+  const empty = s.players.filter((p) => !p.eliminated && p.hand.length === 0).map((p) => esc(p.name));
+  const left = secondsLeft(finalDoublesEndsAt);
+  panel.innerHTML = `
+    <p><strong>${empty.join(" et ")} ${empty.length > 1 ? "n'ont" : "n'a"} plus de cartes !</strong></p>
+    <p class="hint">Dernière chance pour poser un doublon sur la défausse${left ? ` : ${left} s` : "…"}. Ensuite, la manche se termine.</p>`;
+}
 
 function addButton(panel, text, onClick, className = "") {
   const btn = document.createElement("button");
@@ -653,7 +797,7 @@ function renderOnlinePhasePanel(s, panel) {
 
   const me = s.players.find((p) => p.id === myId);
   if (me && me.eliminated) {
-    panel.innerHTML = `<p class="hint">Tu ne joues plus (100 points atteints) — tu peux suivre la partie jusqu'au bout.</p>`;
+    panel.innerHTML = `<p class="hint">Tu ne joues plus (plus de 100 points) — tu peux suivre la partie jusqu'au bout.</p>`;
     return;
   }
 
@@ -677,8 +821,7 @@ function renderOnlinePhasePanel(s, panel) {
       return;
     }
     panel.innerHTML = `<p class="hint"><strong>C'est ton tour !</strong></p>`;
-    if (!s.gabo_caller_id) addButton(panel, "Dire GABO !", () => handleCallGabo(myId), "danger");
-    addButton(panel, "Piocher une carte", () => handleDraw(myId));
+    renderTurnButtons(s, panel, myId);
     return;
   }
 
@@ -708,7 +851,7 @@ function renderOnlinePhasePanel(s, panel) {
           : "Clique maintenant la carte d'un adversaire à échanger contre la tienne.";
     }
     panel.innerHTML = `<p class="hint">${hint}</p>`;
-    addButton(panel, "Ne pas utiliser le pouvoir", () => handleSkipPower(myId), "secondary");
+    addButton(panel, "Passer (ne pas utiliser le pouvoir)", () => handleSkipPower(myId), "secondary");
   }
 }
 
@@ -782,7 +925,6 @@ async function startInitialPeekReveal(playerId, indices) {
 async function handleCallGabo(playerId) {
   try {
     await call("call_gabo", { player_id: playerId });
-    log(`${playerName(playerId)} a dit GABO !`);
   } catch (e) {
     log("Erreur: " + e.message);
   }
@@ -803,7 +945,6 @@ async function handleDraw(playerId) {
 async function handleDiscardDrawn(playerId) {
   try {
     const resp = await call("discard_drawn", { player_id: playerId });
-    log(`${playerName(playerId)} a défaussé sa carte piochée.`);
     publicState = resp.state;
     if (resp.state.phase === "power_pending" && resp.state.pending_power_owner === playerId) {
       render();
@@ -819,7 +960,6 @@ async function handleDiscardDrawn(playerId) {
 async function handleSwapDrawn(playerId, idx) {
   try {
     const resp = await call("swap_drawn", { player_id: playerId, hand_index: idx });
-    log(`${playerName(playerId)} a échangé sa carte piochée.`);
     publicState = resp.state;
   } catch (e) {
     log("Erreur: " + e.message);
@@ -893,7 +1033,6 @@ async function handlePowerSwapTarget(ownerId, ownIndex, targetId, targetIndex) {
 async function handleSkipPower(playerId) {
   try {
     await call("skip_power", { player_id: playerId });
-    log(`${playerName(playerId)} n'utilise pas son pouvoir.`);
   } catch (e) {
     log("Erreur: " + e.message);
   } finally {
@@ -906,15 +1045,14 @@ async function handleSkipPower(playerId) {
 }
 
 // ---------------------------------------------------------------------
-// Snap: click any player's card directly on the table to try to match it
-// with the top of the discard pile.
+// Doublon ("snap"): click any player's card directly on the table to try to
+// match it with the top of the discard pile.
 // ---------------------------------------------------------------------
 
 async function handleSnapClick(playerId, idx) {
   snapArmed = false;
   try {
     await call("snap_attempt", { player_id: playerId, hand_index: idx });
-    log(`${playerName(playerId)} tente un snap.`);
   } catch (e) {
     log("Erreur: " + e.message);
   }
@@ -932,28 +1070,51 @@ function renderRoundSummaryPanel(summary) {
     panel.innerHTML = "";
     return;
   }
+  const emptyIds = summary.empty_hand_ids || [];
   const rows = Object.keys(summary.hand_sums)
     .map((pid) => {
       const delta = summary.score_deltas[pid];
-      return `<tr><td>${esc(playerName(pid))}${pid === summary.caller_id ? " (GABO)" : ""}</td><td>${summary.hand_sums[pid]}</td><td>+${delta}</td></tr>`;
+      const tag = pid === summary.caller_id ? " (GABO)" : emptyIds.includes(pid) ? " (plus de cartes)" : "";
+      return `<tr><td>${esc(playerName(pid))}${tag}</td><td>${summary.hand_sums[pid]}</td><td>+${delta}</td></tr>`;
     })
     .join("");
-  const caller = esc(playerName(summary.caller_id));
   // Online, only the host moves the table on to the next round.
   const nextRound = !ONLINE || isHost()
     ? `<button id="next-round-btn">Manche suivante</button>`
     : `<p class="hint">En attente que l'hôte lance la manche suivante…</p>`;
   panel.innerHTML = `
-    <h3 style="margin-top:0;">${summary.caller_won ? `${caller} a réussi son GABO !` : `${caller} a raté son GABO !`}</h3>
+    <h3 style="margin-top:0;">${roundTitle(summary)}</h3>
     <table class="summary">
       <thead><tr><th>Joueur</th><th>Somme des cartes</th><th>Points ajoutés</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
-    ${summary.newly_eliminated.length ? `<p class="hint">Éliminé(s) : ${summary.newly_eliminated.map((pid) => esc(playerName(pid))).join(", ")}</p>` : ""}
+    ${roundNotes(summary)}
     <div class="row" style="justify-content:center; margin-top:10px;">${nextRound}</div>
   `;
   const btn = document.getElementById("next-round-btn");
   if (btn) btn.onclick = startRound;
+}
+
+function roundTitle(summary) {
+  if (!summary) return "";
+  if (!summary.caller_id) {
+    const names = (summary.empty_hand_ids || []).map((pid) => esc(playerName(pid)));
+    return `${names.join(" et ")} ${names.length > 1 ? "n'ont" : "n'a"} plus de cartes : manche gagnée !`;
+  }
+  const caller = esc(playerName(summary.caller_id));
+  return summary.caller_won ? `${caller} a réussi son GABO !` : `${caller} a raté son GABO !`;
+}
+
+function roundNotes(summary) {
+  const names = (ids) => (ids || []).map((pid) => esc(playerName(pid))).join(", ");
+  let html = "";
+  if (summary.reset_to_50 && summary.reset_to_50.length) {
+    html += `<p class="hint">Pile 100 points : ${names(summary.reset_to_50)} redescend à 50 !</p>`;
+  }
+  if (summary.newly_eliminated.length) {
+    html += `<p class="hint">Éliminé(s), plus de 100 points : ${names(summary.newly_eliminated)}</p>`;
+  }
+  return html;
 }
 
 function renderGameOverPanel(s) {
@@ -964,6 +1125,8 @@ function renderGameOverPanel(s) {
     .join("");
   panel.innerHTML = `
     <h3 style="margin-top:0;">Partie terminée !</h3>
+    <p class="hint">Dernière manche : ${roundTitle(s.last_round_summary)}</p>
+    ${s.last_round_summary ? roundNotes(s.last_round_summary) : ""}
     <p>${esc(playerName(s.winner_id))} remporte la partie 🎉</p>
     <table class="summary">
       <thead><tr><th>Joueur</th><th>Score final</th></tr></thead>

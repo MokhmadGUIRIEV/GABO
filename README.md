@@ -22,14 +22,18 @@ GABO est un jeu de cartes de mémoire et de bluff, pour **2 à 6 joueurs**, avec
 
 Le tour passe ensuite au joueur suivant, qui fait le même choix, et ainsi de suite.
 
-## Le snap : jeter une carte identique
+## Les doublons : jeter une carte identique
 
-À tout moment — même si ce n'est pas son tour — un joueur qui pense avoir une carte de la **même valeur** que celle actuellement au sommet de la pile de défausse peut la jeter par-dessus :
+À tout moment — même si ce n'est pas son tour — un joueur qui pense avoir une carte de la **même valeur** que celle actuellement au sommet de la pile de défausse peut la jeter par-dessus (« poser un doublon ») :
 
 - **S'il a raison** : sa carte rejoint la défausse et il se retrouve avec une carte de moins dans son jeu (bon pour lui).
 - **S'il se trompe** : il reçoit une carte de pénalité, piochée sans la regarder et ajoutée à sa main.
 
 > **Exemple** — Parmi les 2 cartes observées au début, je me souviens avoir un 6 et un 8. Le joueur avant moi pioche et défausse un 8. Ce n'est pas mon tour, mais tant que ce 8 reste au sommet de la défausse, je peux y déposer mon propre 8.
+
+**Délai pour les doublons** : après chaque carte posée sur la défausse, le joueur suivant doit attendre **3 secondes** avant de piocher ou de dire GABO, pour laisser à tout le monde le temps de poser ses doublons. Chaque doublon posé relance ces 3 secondes.
+
+**Plus aucune carte** : un joueur qui se débarrasse de sa dernière carte gagne la manche. Les autres ont encore **3 secondes** (relancées à chaque doublon) pour poser leurs propres doublons ; puis la manche s'arrête et toutes les cartes sont révélées. Tous ceux qui n'ont plus de cartes marquent 0 point, les autres ajoutent à leur score la somme de leurs cartes.
 
 ## Valeur des cartes
 
@@ -70,7 +74,7 @@ Après un GABO, toutes les cartes sont ramassées et mélangées, et une nouvell
 
 ## Élimination et fin de partie
 
-Un joueur atteignant **100 points ou plus** est éliminé. La partie continue avec les joueurs restants (les scores déjà acquis sont conservés), jusqu'à ce qu'il n'en reste plus qu'un seul : il remporte la partie.
+Un joueur qui tombe **pile sur 100 points** redescend à **50 points**. Un joueur qui **dépasse 100 points** est éliminé. La partie continue avec les joueurs restants (les scores déjà acquis sont conservés), jusqu'à ce qu'il n'en reste plus qu'un seul : il remporte la partie.
 
 ---
 
@@ -125,6 +129,8 @@ Le moteur de jeu (`engine.py`) ne connaît rien du transport (HTTP/WebSocket) : 
 
 **Comptes et administration** : sur la page « Mon compte », chacun peut changer son pseudo (il est aussitôt mis à jour dans le classement), changer son mot de passe (l'actuel est demandé) ou supprimer son compte (mot de passe demandé, puis confirmation). Ses résultats restent visibles sous son pseudo dans l'historique des autres, mais il disparaît du classement. Les comptes dont l'email figure dans la variable d'environnement `GABO_ADMIN_EMAILS` (plusieurs emails séparés par des virgules) ont accès à une page « Administration » pour voir tous les comptes et en supprimer. Ce rôle est vérifié par le serveur à chaque action.
 
+**Voir ce qui se passe** : chaque coup est annoncé à tous les joueurs (au-dessus de la table et dans le journal) : qui a pioché, quelle carte part à la défausse, qui a échangé quelle carte avec quoi (carte piochée ou pouvoir d'un Valet/d'une Dame), qui regarde quelle carte, qui pose un doublon. Les cartes qui viennent de bouger s'éclairent quelques secondes, avec une étiquette qui dit d'où elles viennent (« ⇄ Pioche », « ⇄ Bruno », « 👁 Alice », « Pénalité »).
+
 **Sur téléphone** : la table devient ovale pour profiter de la hauteur de l'écran, ses propres cartes sont affichées en grand en bas, et la valeur de chaque carte est écrite en gros au centre. Les sièges qui dépasseraient de l'écran sont recadrés, les boutons d'action prennent toute la largeur, et l'écran reste allumé pendant la partie (si le navigateur le permet). En ligne, le téléphone vibre et l'onglet affiche « (À toi !) » quand c'est son tour.
 
 **Sécurité du mode en ligne** : chaque connexion WebSocket est liée au siège du compte connecté. Le serveur ignore complètement l'identité que le navigateur prétend avoir : un joueur ne peut ni jouer à la place d'un autre, ni demander à voir ses cartes, ni lancer une manche s'il n'est pas l'hôte. Les pseudos des autres joueurs sont systématiquement échappés avant affichage.
@@ -132,12 +138,14 @@ Le moteur de jeu (`engine.py`) ne connaît rien du transport (HTTP/WebSocket) : 
 ### Choix d'implémentation et hypothèses
 
 Les règles du jeu ne précisent pas tout ; voici les choix faits pour lever les ambiguïtés :
-- **Snap** : la comparaison se fait sur la valeur/rang de la carte (un 8 quelle que soit sa couleur), pas sur la couleur exacte.
+- **Doublons** : la comparaison se fait sur la valeur/rang de la carte (un 8 quelle que soit sa couleur), pas sur la couleur exacte.
 - **Appel de GABO** : dès qu'il est annoncé, toutes les cartes sont immédiatement révélées et la manche se termine (les autres joueurs ne rejouent pas de dernier tour).
 - **Premier joueur de chaque nouvelle manche** : après un GABO, c'est le joueur suivant (sens horaire) après celui qui avait commencé la manche précédente qui commence, en sautant les joueurs éliminés.
-- **Carte de départ de la défausse** : une fois que tout le monde a observé ses 2 cartes de départ, une carte est automatiquement retournée de la pioche vers la défausse avant même que le premier tour soit joué. Cela permet de tenter un snap dès le début de la manche, sans attendre qu'un joueur pioche et défausse.
+- **Carte de départ de la défausse** : une fois que tout le monde a observé ses 2 cartes de départ, une carte est automatiquement retournée de la pioche vers la défausse avant même que le premier tour soit joué. Cela permet de poser un doublon dès le début de la manche, sans attendre qu'un joueur pioche et défausse.
 - **Observation initiale** : chaque joueur choisit librement les 2 cartes qu'il veut regarder, en cliquant dessus directement sur la table. En mode local (un seul écran partagé), cette observation se fait joueur par joueur ; en ligne, tout le monde observe en même temps sur son propre écran. Si un joueur en ligne ne choisit pas ses cartes (absent, onglet fermé...), la manche démarre quand même au bout de 45 secondes.
-- **Moment du snap** : en mode local, il n'est possible qu'entre deux tours (un seul écran pour tout le monde) ; en ligne, chacun peut tenter un snap à tout moment où la défausse a une carte, même pendant la réflexion d'un autre joueur.
+- **Moment des doublons** : en mode local, il n'est possible qu'entre deux tours (un seul écran pour tout le monde) ; en ligne, chacun peut poser un doublon à tout moment où la défausse a une carte, même pendant la réflexion d'un autre joueur.
+- **Plus aucune carte pendant le tour d'un autre** : si un joueur pose son dernier doublon pendant qu'un autre joueur réfléchit à sa carte piochée ou à son pouvoir, ce tour est annulé (la carte piochée retourne sur la pioche) et la dernière chance pour les doublons commence.
+- **Délai de la toute première défausse** : les 3 secondes pour les doublons sur la carte de départ commencent une fois les 2 cartes observées recachées, pas pendant qu'on les mémorise.
 - **Hôte en ligne** : seul l'hôte (le créateur de la partie) lance la partie et chaque nouvelle manche.
 
 ### Installation

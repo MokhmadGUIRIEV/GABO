@@ -56,10 +56,17 @@ SWAP_AND_PEEK_RANKS = {Rank.JACK, Rank.QUEEN}
 POWER_RANKS = PEEK_OWN_RANKS | PEEK_OPPONENT_RANKS | SWAP_AND_PEEK_RANKS
 
 GABO_PENALTY = 35
+# Going past 100 eliminates the player; landing exactly on 100 sends the
+# score back down to 50.
 ELIMINATION_SCORE = 100
+EXACT_LIMIT_RESET_SCORE = 50
 INITIAL_HAND_SIZE = 4
 INITIAL_PEEK_COUNT = 2
 PEEK_DURATION_SECONDS = 5
+# After a card lands on the discard pile, everyone gets this long to drop a
+# matching card (a "doublon") before the next player may draw or call GABO.
+# Same delay before a round ends because someone has no cards left.
+DOUBLES_WINDOW_SECONDS = 3
 
 
 @dataclass(frozen=True)

@@ -20,10 +20,12 @@ class FakeClock:
         self.t += dt
 
 
-def make_engine(n_players=3, seed=1, clock=None):
+def make_engine(n_players=3, seed=1, clock=None, doubles_window=0):
+    # No doubles window by default: most tests chain actions instantly.
     ids = [f"p{i}" for i in range(n_players)]
     names = {pid: pid.upper() for pid in ids}
-    return GameEngine(ids, names, rng_seed=seed, clock=clock or FakeClock())
+    return GameEngine(ids, names, rng_seed=seed, clock=clock or FakeClock(),
+                      doubles_window_seconds=doubles_window)
 
 
 # ---------------------------------------------------------------------------
@@ -427,3 +429,160 @@ def test_second_round_starts_next_to_previous_starter_and_skips_eliminated():
     assert engine._starting_index == expected_next
     for p in engine.players:
         assert len(p.hand) == 4
+
+
+# ---------------------------------------------------------------------------
+# Doubles window, empty hand, exact 100, action feed
+# ---------------------------------------------------------------------------
+
+def _ready_engine(n_players=3, window=3):
+    clock = FakeClock()
+    engine = make_engine(n_players, clock=clock, doubles_window=window)
+    engine.start_round()
+    engine.finish_initial_peek()
+    return engine, clock
+
+
+def test_doubles_window_after_first_discard_and_after_each_turn():
+    engine, clock = _ready_engine()
+    current = engine.current_player.id
+    # The first discard card was just flipped: nobody plays for 3 seconds.
+    with pytest.raises(GameError):
+        engine.draw_card(current)
+    with pytest.raises(GameError):
+        engine.call_gabo(current)
+    assert engine.public_state(current)["doubles_window_remaining"] == pytest.approx(3)
+    clock.advance(3)
+    engine.draw_card(current)
+    engine.drawn_card = Card(Rank.TWO, Suit.HEART)
+    engine.discard_drawn(current)
+    nxt = engine.current_player.id
+    assert nxt != current
+    with pytest.raises(GameError):
+        engine.draw_card(nxt)
+    clock.advance(2.9)
+    with pytest.raises(GameError):
+        engine.draw_card(nxt)
+    clock.advance(0.2)
+    engine.draw_card(nxt)
+
+
+def test_doubles_can_be_dropped_during_window_and_extend_it():
+    engine, clock = _ready_engine()
+    top = engine.deck.top_discard
+    other = engine.players[(engine.current_index + 1) % 3]
+    other.hand[0] = Card(top.rank, Suit.SPADE if top.suit != Suit.SPADE else Suit.CLUB)
+    clock.advance(2)
+    assert engine.snap_attempt(other.id, 0) is True
+    # The pile changed: 3 more seconds from now.
+    clock.advance(2)
+    with pytest.raises(GameError):
+        engine.draw_card(engine.current_player.id)
+    clock.advance(1.1)
+    engine.draw_card(engine.current_player.id)
+
+
+def test_empty_hand_ends_round_after_last_doubles_window():
+    engine, clock = _ready_engine()
+    clock.advance(3)
+    current = engine.current_player
+    engine.draw_card(current.id)  # a turn is in progress when it happens
+    drawn = engine.drawn_card
+    pile_size = len(engine.deck.draw_pile)
+
+    a, b = [p for p in engine.players if p.id != current.id]
+    top = engine.deck.top_discard
+    same = Card(top.rank, Suit.SPADE if top.suit != Suit.SPADE else Suit.CLUB)
+    a.hand = [same]
+    b.hand = [Card(top.rank, Suit.DIAMOND if top.suit != Suit.DIAMOND else Suit.HEART), Card(Rank.FIVE, Suit.CLUB)]
+    current.hand = [Card(Rank.NINE, Suit.HEART), Card(Rank.TWO, Suit.CLUB)]
+
+    assert engine.snap_attempt(a.id, 0) is True
+    assert engine.phase == Phase.FINAL_DOUBLES
+    # The interrupted turn is cancelled: the drawn card went back on the pile.
+    assert engine.drawn_card is None and len(engine.deck.draw_pile) == pile_size + 1
+    assert engine.deck.draw_pile[-1] == drawn
+    with pytest.raises(GameError):
+        engine.draw_card(current.id)
+    assert engine.finish_final_doubles() is False
+
+    # Someone else still drops their double in time.
+    clock.advance(2)
+    assert engine.snap_attempt(b.id, 0) is True
+    clock.advance(2)
+    assert engine.finish_final_doubles() is False  # window extended by that double
+    clock.advance(1.1)
+    assert engine.finish_final_doubles() is True
+
+    assert engine.phase == Phase.ROUND_OVER
+    summary = engine.last_round_summary
+    assert summary["caller_id"] is None
+    assert summary["empty_hand_ids"] == [a.id]
+    assert summary["score_deltas"] == {a.id: 0, b.id: 5, current.id: 11}
+
+
+def test_several_players_with_no_cards_all_score_zero():
+    engine, clock = _ready_engine(window=0)
+    a, b, c = engine.players
+    top = engine.deck.top_discard
+    a.hand = [Card(top.rank, Suit.SPADE if top.suit != Suit.SPADE else Suit.CLUB)]
+    b.hand = [Card(top.rank, Suit.DIAMOND if top.suit != Suit.DIAMOND else Suit.HEART)]
+    c.hand = [Card(Rank.THREE, Suit.CLUB)]
+    engine.snap_attempt(a.id, 0)
+    engine.snap_attempt(b.id, 0)
+    assert engine.finish_final_doubles() is True
+    assert engine.last_round_summary["score_deltas"] == {a.id: 0, b.id: 0, c.id: 3}
+
+
+def test_exactly_100_goes_back_to_50_and_over_100_is_eliminated():
+    engine, _ = _ready_engine(window=0)
+    caller, lands_on_100, goes_over = engine.players
+    engine.current_index = 0
+    caller.hand = [Card(Rank.ACE, Suit.HEART)]
+    lands_on_100.score, lands_on_100.hand = 90, [Card(Rank.TEN, Suit.HEART)]
+    goes_over.score, goes_over.hand = 95, [Card(Rank.SIX, Suit.HEART)]
+    engine.call_gabo(caller.id)
+    assert lands_on_100.score == 50 and not lands_on_100.eliminated
+    assert goes_over.score == 101 and goes_over.eliminated
+    assert engine.last_round_summary["reset_to_50"] == [lands_on_100.id]
+    assert engine.last_round_summary["newly_eliminated"] == [goes_over.id]
+
+
+def test_actions_tell_everyone_which_cards_moved_and_from_where():
+    engine, _ = _ready_engine(window=0)
+    me = engine.current_player
+    opp = engine.players[(engine.current_index + 1) % 3]
+    engine.draw_card(me.id)
+    engine.drawn_card = Card(Rank.QUEEN, Suit.HEART)
+    engine.discard_drawn(me.id)
+    engine.use_power_swap_and_peek(me.id, 2, opp.id, 1)
+    nxt = engine.current_player
+    engine.draw_card(nxt.id)
+    engine.swap_drawn(nxt.id, 3)
+
+    actions = engine.public_state(opp.id)["actions"]
+    assert [a["type"] for a in actions] == ["draw", "discard_drawn", "power_swap", "draw", "swap_drawn"]
+    swap = actions[2]
+    assert swap["player_id"] == me.id and swap["power"] == "swap_and_peek"
+    assert swap["power_card"] == {"rank": "dame", "suit": "coeur", "value": 12}
+    assert (swap["own_index"], swap["target_id"], swap["target_index"]) == (2, opp.id, 1)
+    assert actions[4]["hand_index"] == 3 and "discarded" in actions[4]
+    assert [a["seq"] for a in actions] == sorted(a["seq"] for a in actions)
+    # Never leaks a hidden card: only discarded (face-up) cards are named.
+    assert "card" not in actions[0] and "card" not in swap
+
+
+def test_first_doubles_window_starts_after_the_initial_peek():
+    clock = FakeClock()
+    engine = make_engine(2, clock=clock, doubles_window=3)
+    engine.start_round()
+    for p in engine.players:
+        engine.peek_initial(p.id, [0, 1])
+    clock.advance(1)
+    engine.finish_initial_peek()  # everyone peeked: cards visible 4 more seconds
+    current = engine.current_player.id
+    clock.advance(4 + 2.9)
+    with pytest.raises(GameError):
+        engine.draw_card(current)
+    clock.advance(0.2)
+    engine.draw_card(current)
