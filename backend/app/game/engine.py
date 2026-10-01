@@ -17,6 +17,8 @@ from .cards import (
     Deck,
     GABO_PENALTY,
     ELIMINATION_SCORE,
+    EXACT_LIMIT_RESET_SCORE,
+    DOUBLES_WINDOW_SECONDS,
     INITIAL_HAND_SIZE,
     INITIAL_PEEK_COUNT,
     PEEK_DURATION_SECONDS,
@@ -33,6 +35,9 @@ class Phase(str, Enum):
     TURN = "turn"
     AWAITING_DECISION = "awaiting_decision"
     POWER_PENDING = "power_pending"
+    # Someone has no cards left: the round ends after a short last chance
+    # for everyone else to drop their own doubles.
+    FINAL_DOUBLES = "final_doubles"
     ROUND_OVER = "round_over"
     GAME_OVER = "game_over"
 
@@ -65,6 +70,13 @@ class _Reveal:
     expires_at: float
 
 
+# Every recent move, readable by everyone, so each screen can show what just
+# happened (which cards moved, from where). Only what the whole table would
+# see on a real table: the cards' faces stay private except those that are
+# put face up on the discard pile.
+MAX_RECENT_ACTIONS = 30
+
+
 class GameEngine:
     """State machine for a single GABO table.
 
@@ -75,10 +87,14 @@ class GameEngine:
     """
 
     def __init__(self, player_ids: list[str], player_names: dict[str, str],
-                 rng_seed: int | None = None, clock=time.time):
+                 rng_seed: int | None = None, clock=time.time,
+                 doubles_window_seconds: float | None = None):
         if not 2 <= len(player_ids) <= 6:
             raise GameError("GABO se joue de 2 à 6 joueurs.")
         self._clock = clock
+        self.doubles_window_seconds = (
+            DOUBLES_WINDOW_SECONDS if doubles_window_seconds is None else doubles_window_seconds
+        )
         self.players: list[Player] = [
             Player(id=pid, name=player_names.get(pid, pid)) for pid in player_ids
         ]
@@ -92,11 +108,19 @@ class GameEngine:
         self.drawn_card_owner: str | None = None
         self.pending_power: PowerType | None = None
         self.pending_power_owner: str | None = None
+        # The face-up card whose power is being used (shown to everyone).
+        self.pending_power_card: Card | None = None
         self.initial_peek_deadline: float | None = None
         self._peeked_players: set[str] = set()
         self._reveals: list[_Reveal] = []
         self.winner_id: str | None = None
         self.last_round_summary: dict | None = None
+        # Nobody may draw or call GABO before this time (doubles window).
+        self.doubles_window_until: float = 0.0
+        # FINAL_DOUBLES phase: when the round actually ends.
+        self.final_doubles_deadline: float | None = None
+        self.actions: list[dict] = []
+        self._action_seq = 0
 
     # ------------------------------------------------------------------
     # Helpers
@@ -128,6 +152,18 @@ class GameEngine:
         now = self._clock()
         self._reveals = [r for r in self._reveals if r.expires_at > now]
 
+    def _record(self, kind: str, player_id: str, **details) -> None:
+        self._action_seq += 1
+        self.actions.append({"seq": self._action_seq, "type": kind, "player_id": player_id, **details})
+        del self.actions[:-MAX_RECENT_ACTIONS]
+
+    def _open_doubles_window(self) -> None:
+        self.doubles_window_until = max(self.doubles_window_until, self._clock() + self.doubles_window_seconds)
+
+    def _require_doubles_window_closed(self) -> None:
+        if self._clock() < self.doubles_window_until:
+            raise GameError("Attends un instant : les autres peuvent encore poser un doublon.")
+
     def _advance_turn(self) -> None:
         active = self._active_players()
         if len(active) <= 1:
@@ -149,6 +185,7 @@ class GameEngine:
             return
         self._advance_turn()
         self.phase = Phase.TURN
+        self._open_doubles_window()
 
     # ------------------------------------------------------------------
     # Round lifecycle
@@ -170,6 +207,8 @@ class GameEngine:
         self.pending_power = None
         self.pending_power_owner = None
         self.last_round_summary = None
+        self.doubles_window_until = 0.0
+        self.final_doubles_deadline = None
 
         for player in self.players:
             player.hand = []
@@ -218,6 +257,11 @@ class GameEngine:
             # Retourne la première carte de la défausse : les joueurs peuvent
             # déjà tenter un snap dessus avant même que le premier tour soit joué.
             self.deck.discard(self.deck.draw())
+            if self.doubles_window_seconds > 0:
+                # Players are still memorising their 2 cards: the doubles
+                # window on this first card starts once they're hidden again.
+                peek_ends = max((r.expires_at for r in self._reveals), default=self._clock())
+                self.doubles_window_until = max(self._clock(), peek_ends) + self.doubles_window_seconds
 
     # ------------------------------------------------------------------
     # Turn actions
@@ -230,7 +274,9 @@ class GameEngine:
             raise GameError("Ce n'est pas votre tour.")
         if self.gabo_caller_id is not None:
             raise GameError("GABO a déjà été annoncé.")
+        self._require_doubles_window_closed()
         self.gabo_caller_id = player_id
+        self._record("gabo", player_id)
         self._resolve_round()
 
     def draw_card(self, player_id: str) -> Card:
@@ -238,16 +284,19 @@ class GameEngine:
             raise GameError("Ce n'est pas le moment de piocher.")
         if self.current_player.id != player_id:
             raise GameError("Ce n'est pas votre tour.")
+        self._require_doubles_window_closed()
         card = self.deck.draw()
         self.drawn_card = card
         self.drawn_card_owner = player_id
         self.phase = Phase.AWAITING_DECISION
+        self._record("draw", player_id)
         return card
 
     def discard_drawn(self, player_id: str) -> PowerType | None:
         self._require_decision(player_id)
         card = self.drawn_card
         self.deck.discard(card)
+        self._record("discard_drawn", player_id, card=card.to_dict())
         if card.grants_peek_own:
             self.pending_power = PowerType.PEEK_OWN
         elif card.grants_peek_opponent:
@@ -259,6 +308,7 @@ class GameEngine:
 
         if self.pending_power is not None:
             self.pending_power_owner = player_id
+            self.pending_power_card = card
             self.phase = Phase.POWER_PENDING
             self.drawn_card = None
             self.drawn_card_owner = None
@@ -274,6 +324,7 @@ class GameEngine:
         old_card = player.hand[hand_index]
         player.hand[hand_index] = self.drawn_card
         self.deck.discard(old_card)
+        self._record("swap_drawn", player_id, hand_index=hand_index, discarded=old_card.to_dict())
         # Swapping always cancels any power, even for 7/8/9/10/J/Q.
         self._end_turn()
         return old_card
@@ -301,6 +352,8 @@ class GameEngine:
             raise GameError("Aucun pouvoir en attente.")
         if self.pending_power_owner != player_id:
             raise GameError("Ce n'est pas votre pouvoir.")
+        self._record("skip_power", player_id, power=self.pending_power.value,
+                     power_card=self.pending_power_card.to_dict())
         self._end_turn()
 
     def use_power_peek_own(self, player_id: str, hand_index: int) -> Card:
@@ -310,6 +363,8 @@ class GameEngine:
             raise GameError("Index de carte invalide.")
         card = player.hand[hand_index]
         self._add_reveal(player_id, player_id, hand_index, card)
+        self._record("power_peek", player_id, power=self.pending_power.value,
+                     power_card=self.pending_power_card.to_dict(), target_id=player_id, hand_index=hand_index)
         self._end_turn()
         return card
 
@@ -322,6 +377,9 @@ class GameEngine:
             raise GameError("Index de carte invalide.")
         card = target.hand[hand_index]
         self._add_reveal(player_id, target_player_id, hand_index, card)
+        self._record("power_peek", player_id, power=self.pending_power.value,
+                     power_card=self.pending_power_card.to_dict(), target_id=target_player_id,
+                     hand_index=hand_index)
         self._end_turn()
         return card
 
@@ -342,6 +400,9 @@ class GameEngine:
         )
         new_card = player.hand[own_index]
         self._add_reveal(player_id, player_id, own_index, new_card)
+        self._record("power_swap", player_id, power=self.pending_power.value,
+                     power_card=self.pending_power_card.to_dict(), own_index=own_index,
+                     target_id=target_player_id, target_index=target_index)
         self._end_turn()
         return new_card
 
@@ -351,7 +412,7 @@ class GameEngine:
 
     def snap_attempt(self, player_id: str, hand_index: int) -> bool:
         if self.phase in (Phase.LOBBY, Phase.INITIAL_PEEK, Phase.ROUND_OVER, Phase.GAME_OVER):
-            raise GameError("Impossible de défausser une carte identique maintenant.")
+            raise GameError("Impossible de poser un doublon maintenant.")
         top = self.deck.top_discard
         if top is None:
             raise GameError("La pile de défausse est vide.")
@@ -365,11 +426,52 @@ class GameEngine:
         if candidate.rank == top.rank:
             del player.hand[hand_index]
             self.deck.discard(candidate)
+            self._record("snap", player_id, success=True, hand_index=hand_index, card=candidate.to_dict())
+            # The pile changed: give everyone time to answer this card too.
+            self._open_doubles_window()
+            if not player.hand:
+                self._start_final_doubles()
+            elif self.phase == Phase.FINAL_DOUBLES:
+                self.final_doubles_deadline = self.doubles_window_until
             return True
         # Wrong guess: penalty card, drawn blind and added unseen to hand.
+        # The card tried is shown to everyone, then goes back face down.
         penalty_card = self.deck.draw()
         player.hand.append(penalty_card)
+        self._record("snap", player_id, success=False, hand_index=hand_index, card=candidate.to_dict(),
+                     penalty_index=len(player.hand) - 1)
         return False
+
+    def _start_final_doubles(self) -> None:
+        """Someone just got rid of their last card: the round ends after one
+        last doubles window, whatever the current player was doing."""
+        if self.phase == Phase.FINAL_DOUBLES:
+            self.final_doubles_deadline = self.doubles_window_until
+            return
+        if self.drawn_card is not None:
+            # The turn in progress is cancelled: the drawn card goes back.
+            self.deck.draw_pile.append(self.drawn_card)
+        self.drawn_card = None
+        self.drawn_card_owner = None
+        self.pending_power = None
+        self.pending_power_owner = None
+        self.phase = Phase.FINAL_DOUBLES
+        self.final_doubles_deadline = self.doubles_window_until
+
+    def final_doubles_seconds_left(self) -> float | None:
+        if self.phase != Phase.FINAL_DOUBLES or self.final_doubles_deadline is None:
+            return None
+        return max(0.0, self.final_doubles_deadline - self._clock())
+
+    def finish_final_doubles(self) -> bool:
+        """Ends the round once the last doubles window is over. Safe to call at
+        any time (the transport layer calls it on a timer): returns whether
+        the round ended."""
+        if self.phase != Phase.FINAL_DOUBLES or self._clock() < self.final_doubles_deadline:
+            return False
+        self.final_doubles_deadline = None
+        self._resolve_round()
+        return True
 
     # ------------------------------------------------------------------
     # Scoring
@@ -380,12 +482,17 @@ class GameEngine:
         active = self._active_players()
         sums = {p.id: p.hand_value for p in active}
         caller_id = self.gabo_caller_id
-        caller_sum = sums[caller_id]
-        others_sums = [s for pid, s in sums.items() if pid != caller_id]
-        caller_wins = all(caller_sum < s for s in others_sums) if others_sums else True
+        empty_hand_ids = [p.id for p in active if not p.hand]
+        caller_wins = False
 
         deltas: dict[str, int] = {}
-        if caller_wins:
+        if caller_id is None:
+            # Round ended because someone ran out of cards: whoever has no
+            # card left scores 0, everyone else adds up their cards.
+            for pid, s in sums.items():
+                deltas[pid] = 0 if pid in empty_hand_ids else s
+        elif all(sums[caller_id] < s for pid, s in sums.items() if pid != caller_id):
+            caller_wins = True
             deltas[caller_id] = 0
             for pid, s in sums.items():
                 if pid != caller_id:
@@ -397,18 +504,24 @@ class GameEngine:
                     deltas[pid] = 0
 
         newly_eliminated = []
+        reset_to_50 = []
         for p in active:
             p.score += deltas[p.id]
-            if p.score >= ELIMINATION_SCORE and not p.eliminated:
+            if p.score == ELIMINATION_SCORE:
+                p.score = EXACT_LIMIT_RESET_SCORE
+                reset_to_50.append(p.id)
+            elif p.score > ELIMINATION_SCORE and not p.eliminated:
                 p.eliminated = True
                 newly_eliminated.append(p.id)
 
         self.last_round_summary = {
             "caller_id": caller_id,
             "caller_won": caller_wins,
+            "empty_hand_ids": empty_hand_ids,
             "hand_sums": sums,
             "score_deltas": deltas,
             "newly_eliminated": newly_eliminated,
+            "reset_to_50": reset_to_50,
         }
 
         self.drawn_card = None
@@ -482,4 +595,9 @@ class GameEngine:
             "players": players_view,
             "winner_id": self.winner_id,
             "last_round_summary": self.last_round_summary,
+            "doubles_window_remaining": max(0.0, self.doubles_window_until - now),
+            "final_doubles_remaining": (
+                max(0.0, self.final_doubles_deadline - now) if self.final_doubles_deadline is not None else None
+            ),
+            "actions": list(self.actions),
         }

@@ -52,10 +52,45 @@ async def _auto_finish_initial_peek(room: RoomSession, round_number: int) -> Non
         await room.broadcast({"type": "table_updated"})
 
 
+async def _final_doubles_timer(room: RoomSession, round_number: int) -> None:
+    """Ends the round once the last doubles window (someone has no cards
+    left) is over. The window grows with every new doublon, so re-check."""
+    while True:
+        engine = room.engine
+        if engine is None or engine.round_number != round_number:
+            return
+        left = engine.final_doubles_seconds_left()
+        if left is None:
+            return
+        if left > 0:
+            await asyncio.sleep(left + 0.05)
+            continue
+        if engine.finish_final_doubles():
+            _after_change(room)
+            await room.broadcast({"type": "table_updated"})
+        return
+
+
+def _after_change(room: RoomSession) -> None:
+    """Follow-ups needed after any change to the table."""
+    engine = room.engine
+    if engine is None:
+        return
+    # Catch up on an overdue end of round (e.g. a timer that ran late).
+    engine.finish_final_doubles()
+    if engine.final_doubles_seconds_left() is not None:
+        task = room.final_doubles_task
+        if task is None or task.done():
+            room.final_doubles_task = asyncio.create_task(_final_doubles_timer(room, engine.round_number))
+    if engine.phase == Phase.GAME_OVER:
+        _persist_game_over(room)
+
+
 def _dispatch(room: RoomSession, msg: dict) -> None:
     action = msg.get("action")
 
     if action == "get_state":
+        _after_change(room)
         return
 
     if action == "start_round":
@@ -78,8 +113,6 @@ def _dispatch(room: RoomSession, msg: dict) -> None:
         engine.finish_initial_peek()
     elif action == "call_gabo":
         engine.call_gabo(msg["player_id"])
-        if engine.phase == Phase.GAME_OVER:
-            _persist_game_over(room)
     elif action == "draw_card":
         engine.draw_card(msg["player_id"])
     elif action == "discard_drawn":
@@ -100,6 +133,7 @@ def _dispatch(room: RoomSession, msg: dict) -> None:
         engine.snap_attempt(msg["player_id"], msg["hand_index"])
     else:
         raise GameError(f"Action inconnue: {action}")
+    _after_change(room)
 
 
 async def _refuse(websocket: WebSocket, code: int) -> None:

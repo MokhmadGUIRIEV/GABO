@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import random
 import string
 from dataclasses import dataclass, field
@@ -37,6 +38,8 @@ class RoomSession:
     game_record_id: int | None = None
     seat_user_ids: dict[str, int] = field(default_factory=dict)
     sockets: list[WebSocket] = field(default_factory=list)
+    # Timer ending the round after the last doubles window (see ws.py).
+    final_doubles_task: asyncio.Task | None = None
 
     @property
     def started(self) -> bool:
@@ -98,6 +101,9 @@ class RoomSession:
             ],
             "winner_id": None,
             "last_round_summary": None,
+            "doubles_window_remaining": 0.0,
+            "final_doubles_remaining": None,
+            "actions": [],
         }
 
     async def broadcast(self, message: dict) -> None:

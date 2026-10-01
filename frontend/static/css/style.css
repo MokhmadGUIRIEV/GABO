@@ -245,6 +245,37 @@ a.link { color: var(--accent); }
   outline: 2px dashed rgba(224,176,57,0.6);
   outline-offset: 2px;
 }
+/* A card that just moved (exchange, power, penalty): glow + where it came from. */
+.seat-static-slot, .seat-action-slot { position: relative; }
+.just-moved .card { box-shadow: 0 0 0 2px #5fd3ff, 0 0 12px rgba(95, 211, 255, 0.9); }
+.slot-badge {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translate(-50%, 3px);
+  background: #5fd3ff;
+  color: #04222e;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 6px;
+  white-space: nowrap;
+  z-index: 3;
+  pointer-events: none;
+  animation: badge-in 0.25s ease-out;
+}
+@keyframes badge-in { from { opacity: 0; transform: translate(-50%, 9px); } }
+
+.last-action {
+  margin-top: 8px;
+  min-height: 1.3em;
+  font-size: 0.9rem;
+  color: #a9e6ff;
+  text-align: center;
+}
+.last-action:empty { display: none; }
+
 .seat-static-slot.chosen .card.back,
 .seat-action-slot.chosen .card.back {
   border-color: var(--accent);

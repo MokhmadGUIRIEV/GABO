@@ -17,6 +17,13 @@ from app.rooms import RoomSession, room_manager
 _counter = 0
 
 
+@pytest.fixture(autouse=True)
+def no_doubles_window(monkeypatch):
+    # These tests chain moves instantly; the 3s doubles window is covered by
+    # the engine tests.
+    monkeypatch.setattr("app.game.engine.DOUBLES_WINDOW_SECONDS", 0)
+
+
 def new_user(client: TestClient, name: str) -> None:
     global _counter
     _counter += 1
@@ -333,3 +340,40 @@ def test_change_password(clients):
     host.post("/api/auth/logout")
     assert host.post("/api/auth/login", json={"email": email, "password": "secret123"}).status_code == 401
     assert host.post("/api/auth/login", json={"email": email, "password": "newsecret1"}).status_code == 200
+
+
+def test_round_ends_on_its_own_after_someone_runs_out_of_cards(clients, monkeypatch):
+    from app.game.cards import Card, Rank, Suit
+    import time
+
+    monkeypatch.setattr("app.game.engine.DOUBLES_WINDOW_SECONDS", 0.3)
+    host, friend, _ = clients
+    code = create_online_room(host, friend)
+    with host.websocket_connect(f"/ws/rooms/{code}") as ws_host, \
+            friend.websocket_connect(f"/ws/rooms/{code}") as ws_friend:
+        ws_host.receive_json()
+        ws_friend.receive_json()
+        call(ws_host, "start_round")
+        call(ws_host, "peek_initial", indices=[0, 1])
+        call(ws_friend, "peek_initial", indices=[0, 1])
+
+        engine = room_manager.get(code).engine
+        top = engine.deck.top_discard
+        host_player, friend_player = engine.players
+        host_player.hand = [Card(top.rank, Suit.SPADE if top.suit != Suit.SPADE else Suit.CLUB)]
+        friend_player.hand = [Card(Rank.FOUR, Suit.CLUB), Card(Rank.TWO, Suit.CLUB)]
+        engine.doubles_window_until = 0  # skip the first window (cards still being memorised)
+
+        reply = call(ws_host, "snap_attempt", hand_index=0)
+        assert reply["state"]["phase"] == "final_doubles"
+        assert 0 < reply["state"]["final_doubles_remaining"] <= 0.3
+
+        # Nobody else acts: the server ends the round by itself.
+        deadline = time.time() + 3
+        while engine.phase.value == "final_doubles" and time.time() < deadline:
+            time.sleep(0.05)
+        assert engine.phase.value == "round_over"  # ended by the server timer
+        state = call(ws_friend, "get_state")["state"]
+        assert state["phase"] == "round_over"
+        assert state["last_round_summary"]["empty_hand_ids"] == ["p0"]
+        assert state["last_round_summary"]["score_deltas"] == {"p0": 0, "p1": 6}
